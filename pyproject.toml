@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name = "ap0dl"
-version = "1.6.53"
+version = "1.4"
 description = "A highly efficient, fast, powerful and light-weight anime downloader and streamer for your favorite anime."
 readme = "readme.txt"
 authors = [ "rares9301 <rares.sarmasag@cnmbct.ro>",]

@@ -87,7 +87,7 @@ def __ap0dl_cli__(ctx: click.Context, disable_update):
                     console, "[cyan]An update is available![/]"
                 ):
                     console.print(
-                        f"↑ {upstream_version} ↓ {__version__.__core__}, to update, use: animdl update",
+                        f"↑ {upstream_version} ↓ {__version__.__core__}, to update, use: ap0dl update",
                         style=Style(color="magenta"),
                     )
                     console.print(
