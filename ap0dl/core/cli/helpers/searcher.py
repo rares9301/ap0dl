@@ -1,5 +1,5 @@
 """
-All the search algorithms for all the providers available in AnimDL.
+All the search algorithms for all the providers available in ap0dl.
 """
 
 import json

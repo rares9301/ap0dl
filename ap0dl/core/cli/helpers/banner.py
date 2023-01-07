@@ -63,7 +63,7 @@ def iter_banner(
 
         if tuplised_upstream > tuplised_current_version:
             yield (f"Update ↑ {upstream_version} ↓ {current_version}")
-            yield (f"To update, use: animdl update")
+            yield (f"To update, use: ap0dl update")
 
 
 def banner_gift_wrapper(session, current_version, *, check_for_updates=False):
