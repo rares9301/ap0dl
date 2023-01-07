@@ -78,9 +78,7 @@ This project can be installed on to your device via pip or SC download
 You can contact the developer directly via this [email](mailto:rares.sarmasag@cnmbct.ro). 
 
 <p align="center">
-<a href="https://discord.gg/gaX2Snst2j">
-<img src="https://invidget.switchblade.xyz/gaX2Snst2j">
-</a>
+<img src="https://discord-readme-badge.vercel.app/api?id=299220016530849793">
 </p>
 
 ## Usage
