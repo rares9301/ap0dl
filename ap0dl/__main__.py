@@ -97,4 +97,4 @@ def __ap0dl_cli__(ctx: click.Context, disable_update):
 
 
 if __name__ == "__main__":
-    __animdl_cli__()
+    __ap0dl_cli__()
