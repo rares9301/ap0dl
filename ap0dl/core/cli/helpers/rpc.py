@@ -15,7 +15,7 @@ presence_client.connect()
 presence_client.update(
     state="Queuing up the streams",
     large_image="mascot",
-    large_text="https://github.com/justfoolingaround/animdl",
+    large_text="https://github.com/rares9301/ap0dl",
 )
 
 KITSU_ENDPOINT = "https://kitsu.io/api/"
@@ -57,7 +57,7 @@ def set_streaming_episode(session, anime_name, episode):
         return presence_client.update(
             state=state,
             large_image="mascot",
-            large_text="https://github.com/justfoolingaround/animdl",
+            large_text="https://github.com/rares9301/ap0dl",
             start=int(time.time()),
         )
 
@@ -79,7 +79,7 @@ def set_streaming_episode(session, anime_name, episode):
             large_image=image,
             large_text=anime_name,
             small_image="mascot",
-            small_text="https://github.com/justfoolingaround/animdl",
+            small_text="https://github.com/rares9301/ap0dl",
             start=int(time.time()),
             buttons=url_button,
         )
@@ -101,7 +101,7 @@ def set_streaming_episode(session, anime_name, episode):
         large_image=episode_thumbnail,
         large_text=episode_name if image != "mascot" else anime_name,
         small_image=image,
-        small_text=anime_name if image != "mascot" else "https://github.com/justfoolingaround/animdl",
+        small_text=anime_name if image != "mascot" else "https://github.com/rares9301/ap0dl",
         details=episode_name,
         start=int(time.time()),
         buttons=url_button,
