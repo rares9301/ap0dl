@@ -3,7 +3,7 @@
 
 
 <p align="center">
-<img src="./animdl_demo.gif"></p>
+<img src="https://i.imgur.com/SIuJWJ9.png"></p>
 
 -------
 
@@ -119,7 +119,7 @@ These commands are the main set of command in the project. All of them scrape th
   - This is useful for external usage and testing.
 
 ```sh
-animdl stream "One Piece" 
+ap0dl stream "One Piece" 
 ```
 
 <p align="center">
@@ -193,7 +193,7 @@ You can find out what attributes are available for each stream by using the `gra
 ]
 ```
 
-This is the prettified output of `animdl grab "9anime:one piece"`, and the stream has `headers` and `stream_url` attributes.
+This is the prettified output of `ap0dl grab "9anime:one piece"`, and the stream has `headers` and `stream_url` attributes.
 
 If you feel that a particular stream is fast enough for you, `-q [stream_url=r'.+mcloud\.to.+']`<sub>(or equivalent, this is just for testing)</sub> will select that stream.
 
@@ -229,16 +229,16 @@ Some providers may not work due to DDoS protection services. We try our best to 
 
 Configuration files can be globally or locally be specified.
 
-You can use the `ANIMDL_CONFIG` environment variable to specify a configuration file on a global level.
+You can use the `AP0DL_CONFIG` environment variable to specify a configuration file on a global level.
 
-Else, a file with the name `animdl_config.yml` in the working directory will be used if available.
+Else, a file with the name `ap0dl_config.yml` in the working directory will be used if available.
 
 Futhermore, the configuration files can be globally placed at:
 
 - Windows:
-  - `%USERPROFILE%/.animdl/config.yml`
+  - `%USERPROFILE%/.ap0dl/config.yml`
 - Anything else:
-  - `$HOME/.config/animdl/config.yml`
+  - `$HOME/.config/ap0dl/config.yml`
 
 Only a singular configuration file in the above priority order is used, configurations aren't merged.
 
@@ -331,10 +331,10 @@ fzf:
     state: true
 ```
 
-Users can benefit by using `fzf` and `animdl stream twist:` as this allows them to browse the **entire** Twist library with a heavenly interface.
+Users can benefit by using `fzf` and `ap0dl stream twist:` as this allows them to browse the **entire** Twist library with a heavenly interface.
 
 <p align="center">
-<img src="https://media.discordapp.net/attachments/856404208445292545/972471580640804894/unknown.png"></p>
+<img src="https://i.imgur.com/50Rg1hX.png"></p>
 
 The above screenshot has `fzf`'s user theme configured.
 
@@ -374,7 +374,7 @@ The disclaimer of the project can be found [here](./disclaimer.md).
 
 ## Code redistribution
 
-Feel free to do so and take references from the codebase. You need not give credit to the project or [justfoolingaround](https://github.com/justfoolingaround), however, please do a `blame` check and see if the contributor wants to be credited.
+Feel free to do so and take references from the codebase. You need not give credit to the project.
 
 ## From the author
 
@@ -388,6 +388,7 @@ I'm glad you're here!
 
 - Shell
   - [ani-cli](https://github.com/pystardust/ani-cli)
+  - [animdl](https://github.com/justfoolingaround/animdl)
 - Kotlin
   - [Cloudstream-3](https://github.com/Lagradost/cloudstream-3)
   - [Saikou](https://github.com/saikou-app/saikou)
@@ -411,14 +412,6 @@ The project would definitely not be complete or even in a working state if it we
 ## Sponsoring the project
 
 Usually sponsors means funding which consequently means money but for the project, it means stars. Feel free to star the project if you think it is worthy of one. Moreover, you can just talk, banter and argue with the developer as that way you'll be paying with your time.
-
-<p align="center">
-<code>
-<a href="https://www.codacy.com/gh/justfoolingaround/animdl/dashboard">
-<img src="https://app.codacy.com/project/badge/Grade/a3a66c513f6949fb9f4aeb5fd26db937">
-</a>
-</code>
-</p>
 
 <p align="center">
 <sup>You are an absolute legend, keep being awesome!</sup>
