@@ -31,7 +31,7 @@ def is_repository(author, repository):
 
 @click.command("update", help="Update the project or git pull if a repository.")
 @helpers.decorators.setup_loggers()
-def animdl_update(*args, **kwargs):
+def ap0dl_update(*args, **kwargs):
 
     console = helpers.stream_handlers.get_console()
 

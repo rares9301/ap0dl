@@ -40,11 +40,11 @@ if DISCORD_PRESENCE:
 @helpers.decorators.banner_gift_wrapper(
     http_client.client, __core__, check_for_updates=CHECK_FOR_UPDATES
 )
-def animdl_stream(
+def ap0dl_stream(
     query, special, quality, player_opts, player, index, log_level, **kwargs
 ):
     """
-    Streamer call for animdl streaming session.
+    Streamer call for ap0dl streaming session.
     """
     r = kwargs.get("range")
     console = helpers.stream_handlers.get_console()

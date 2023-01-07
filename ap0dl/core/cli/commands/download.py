@@ -29,7 +29,7 @@ from .. import exit_codes, helpers, http_client
 @helpers.decorators.banner_gift_wrapper(
     http_client.client, __core__, check_for_updates=CHECK_FOR_UPDATES
 )
-def animdl_download(
+def ap0dl_download(
     query, special, quality, download_dir, idm, index, log_level, **kwargs
 ):
     r = kwargs.get("range")

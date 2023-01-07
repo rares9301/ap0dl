@@ -3,11 +3,11 @@ requires = [ "poetry-core>=1.0.0",]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "animdl"
+name = "ap0dl"
 version = "1.6.53"
 description = "A highly efficient, fast, powerful and light-weight anime downloader and streamer for your favorite anime."
 readme = "readme.txt"
-authors = [ "justfoolingaround <kr.justfoolingaround@gmail.com>",]
+authors = [ "rares9301 <rares.sarmasag@cnmbct.ro>",]
 license = "GPT-3"
 
 [tool.poetry.dependencies]
@@ -30,4 +30,4 @@ rich = "^13.0.0"
 [tool.poetry.dev-dependencies]
 
 [tool.poetry.scripts]
-animdl = "animdl.__main__:__animdl_cli__"
+ap0dl = "ap0dl.__main__:__ap0dl_cli__"

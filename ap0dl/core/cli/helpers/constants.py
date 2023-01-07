@@ -4,6 +4,6 @@ LABELS = {
     "pl.crunchyroll.com": "Crunchyroll",
 }
 
-SOURCE_REPOSITORY = "justfoolingaround", "animdl"
-MODULE_NAME = "animdl"
+SOURCE_REPOSITORY = "rares9301", "ap0dl"
+MODULE_NAME = "ap0dl"
 VERSION_FILE_PATH = "master", "animdl/core/__version__.py"

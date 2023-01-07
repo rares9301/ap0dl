@@ -1,5 +1,5 @@
 <h1 align="center"><img src="https://capsule-render.vercel.app/api?type=soft&fontColor=703ee5&text=rares9301/ap0dl&height=160&fontSize=60&desc=Efficient,%20fast%20and%20light-weight.&descAlignY=75&descAlign=60&color=00000000&animation=twinkling"></h1>
-<p align="center"><sup>A highly efficient, powerful and fast anime scraper.</sup></p>
+<p align="center"><sup>Joint project of animdl, the fearsome ap0dl</sup></p>
 
 
 <p align="center">
@@ -41,21 +41,19 @@
 
 ## Installation
 
-This project can be installed on to your device via different mechanisms, these mechanisms are listed below in the order of ease.
+This project can be installed on to your device via pip or SC download
 
 1. PIP Installs Packages **aka** PIP Installation
 
     ```sh
-    pip install animdl
+    pip install ap0dl
     ```
 
 2. Source Code Download
 
     ```sh
-    git clone https://www.github.com/justfoolingaround/animdl
+    git clone https://www.github.com/rares9301/ap0dl
     ```
-
-    Given that you have [`git`](https://git-scm.com/) installed, you can clone the repository from GitHub. If you do not have or want to deal with installation of [`git`](https://git-scm.com/), you can simply download the repository using [this link.](https://github.com/justfoolingaround/animdl/archive/refs/heads/master.zip)
 
     After the repository is downloaded and placed in an appropriate directory, you can, either use [`runner.py`](./runner.py) to use the project without installation **or** use [`setup.py`](./setup.py) to proceed with the installation.
 
@@ -77,7 +75,7 @@ This project can be installed on to your device via different mechanisms, these 
 
 ## Support
 
-You can contact the developer directly via this [email](mailto:kr.justfoolingaround@gmail.com). However, the most recommended way is to head to the discord server.
+You can contact the developer directly via this [email](mailto:rares.sarmasag@cnmbct.ro). 
 
 <p align="center">
 <a href="https://discord.gg/gaX2Snst2j">
@@ -85,12 +83,10 @@ You can contact the developer directly via this [email](mailto:kr.justfoolingaro
 </a>
 </p>
 
-If you run into issues or want to request a new feature, you are encouraged to make a GitHub issue, won't bite you, trust me.
-
 ## Usage
 
 ```txt
-Usage: animdl [OPTIONS] COMMAND [ARGS]...
+Usage: ap0dl [OPTIONS] COMMAND [ARGS]...
 
 Options:
   --help  Show this message and exit.

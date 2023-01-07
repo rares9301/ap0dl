@@ -22,7 +22,7 @@ from ..http_client import client
 @helpers.decorators.banner_gift_wrapper(
     client, __core__, check_for_updates=CHECK_FOR_UPDATES
 )
-def animdl_grab(query, index, **kwargs):
+def ap0dl_grab(query, index, **kwargs):
 
     console = helpers.stream_handlers.get_console()
     console.print(

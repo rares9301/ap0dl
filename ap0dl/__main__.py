@@ -19,12 +19,12 @@ from .core.cli.helpers import stream_handlers
 install(show_locals=True, suppress=[click])
 
 commands = {
-    "download": download.animdl_download,
-    "grab": grab.animdl_grab,
-    "schedule": schedule.animdl_schedule,
-    "search": search.animdl_search,
-    "update": update.animdl_update,
-    "stream": stream.animdl_stream,
+    "download": download.ap0dl_download,
+    "grab": grab.ap0dl_grab,
+    "schedule": schedule.ap0dl_schedule,
+    "search": search.ap0dl_search,
+    "update": update.ap0dl_update,
+    "stream": stream.ap0dl_stream,
 }
 
 
@@ -32,7 +32,7 @@ commands = {
 @click.version_option(__version__.__core__, "--version")
 @click.option("-x", "--disable-update", is_flag=True, help="Disable update check.")
 @click.pass_context
-def __animdl_cli__(ctx: click.Context, disable_update):
+def __ap0dl_cli__(ctx: click.Context, disable_update):
     from .core.cli.helpers import constants
 
     sys.stderr = sys.__stderr__

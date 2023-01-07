@@ -97,7 +97,7 @@ def iter_schedules(session, unix_time):
 @helpers.decorators.logging_options()
 @helpers.decorators.setup_loggers()
 @helpers.decorators.banner_gift_wrapper(client, __core__)
-def animdl_schedule(offset: int, **kwargs):
+def ap0dl_schedule(offset: int, **kwargs):
 
     including_yesterday = int(time.time()) - offset
 
