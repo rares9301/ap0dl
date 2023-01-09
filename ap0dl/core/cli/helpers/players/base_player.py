@@ -1,7 +1,7 @@
 """
-BasePlayer, (c) 2022-present, animdl authors
+BasePlayer, (c) 2022-present, ap0dl authors
 
-Note from developer, KR:
+Note from developer, ap0:
 
 This is the base class for all players. All players
 **must** inherit from this class.

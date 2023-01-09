@@ -9,14 +9,14 @@ try:
 except ImportError:
     from exit_codes import INTERNET_ISSUE
 
-headers = {"User-Agent": "animdl/1.5.84"}
+headers = {"User-Agent": "ap0dl/1.5.2"}
 
 CORS_PROXY = "https://corsproxy.io/"
 
 
 class AnimeHttpClient(httpx.Client):
 
-    http_logger = logging.getLogger("animdl-http")
+    http_logger = logging.getLogger("ap0dl-http")
 
     @staticmethod
     def get_cf_proxy(url, params=None):

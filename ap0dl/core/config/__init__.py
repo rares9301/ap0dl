@@ -25,29 +25,29 @@ def get_existent_path(*user_paths):
 
 
 if sys.platform == "win32":
-    USERPROFILE_ANIMDL_PATH = (
-        Path(os.getenv("LOCALAPPDATA", ".")) / ".config" / "animdl" / "config.yml"
+    USERPROFILE_AP0DL_PATH = (
+        Path(os.getenv("LOCALAPPDATA", ".")) / ".config" / "ap0dl" / "config.yml"
     )
-    OLD_DEPRECATED_PATH = Path(os.getenv("USERPROFILE")) / ".animdl" / "config.yml"
+    OLD_DEPRECATED_PATH = Path(os.getenv("USERPROFILE")) / ".ap0dl" / "config.yml"
 
     if OLD_DEPRECATED_PATH.exists():
-        if not USERPROFILE_ANIMDL_PATH.exists():
+        if not USERPROFILE_AP0DL_PATH.exists():
             warnings.warn(
                 f"The config file path @ {OLD_DEPRECATED_PATH.as_posix()} is deprecated and will be removed in the future. "
-                f"Please migrate to {USERPROFILE_ANIMDL_PATH.as_posix()}. "
+                f"Please migrate to {USERPROFILE_AP0DL_PATH.as_posix()}. "
                 f"This is not done automatically because this project does not want to mess with your files.",
             )
-            USERPROFILE_ANIMDL_PATH = OLD_DEPRECATED_PATH
+            USERPROFILE_AP0DLPATH = OLD_DEPRECATED_PATH
 
 else:
-    USERPROFILE_ANIMDL_PATH = (
-        Path(os.getenv("HOME", ".")) / ".config" / "animdl" / "config.yml"
+    USERPROFILE_AP0DL_PATH = (
+        Path(os.getenv("HOME", ".")) / ".config" / "ap0dl" / "config.yml"
     )
 
 CONFIGURATION_FILE_PATH = get_existent_path(
-    os.getenv("ANIMDL_CONFIG", "./animdl_config.yml"),
-    "/animdl_config.yml",
-    USERPROFILE_ANIMDL_PATH,
+    os.getenv("AP0DL_CONFIG", "./ap0dl_config.yml"),
+    "/ap0dl_config.yml",
+    USERPROFILE_AP0DL_PATH,
 )
 
 DEFAULT_CONFIG = {
