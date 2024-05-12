@@ -14,7 +14,7 @@ REGEX = construct_site_based_regex(
 ANIME_ID_REGEX = regex.compile(r'<input.+?value="(\d+)" id="movie_id"')
 EPISODE_LOAD_AJAX = "https://ajax.gogo-load.com/ajax/load-list-episode"
 
-TITLES_REGEX = regex.compile(r'<a href="/category/.+?" title=".+?">(.+?)</a>')
+TITLES_REGEX = regex.compile(r"<h1>(.+?)</h1>")
 
 
 def get_episode_list(session, anime_id):
@@ -35,7 +35,7 @@ def get_episode_list(session, anime_id):
         )
     )
 
-    for (a, div) in zip(genexp, genexp):
+    for a, div in zip(genexp, genexp):
         episode = div.text_content().split(" ")[1]
         yield float(episode) if "." in episode else int(episode), GOGOANIME + a.get(
             "href"
@@ -51,13 +51,12 @@ def get_quality(url_text):
 
 def get_embed_page(session, episode_url):
     content_parsed = htmlparser.fromstring(session.get(episode_url).text)
-    return "https:{}".format(content_parsed.cssselect("iframe")[0].get("src"))
+    return content_parsed.cssselect("iframe")[0].get("src")
 
 
 def fetcher(session, url, check, match):
-
     if match.group("episode_anime_slug"):
-        url = "{}category/{}".format(GOGOANIME, match.group("episode_anime_slug"))
+        url = f"{GOGOANIME}category/{match.group('episode_anime_slug')}"
 
     content_id = ANIME_ID_REGEX.search(session.get(url).text).group(1)
 

@@ -46,6 +46,6 @@ Contacting the developer
 </h3>
 <br>
 
-Begin by making a GitHub issue or sending an email to kr.justfoolingaround@gmail.com.
+Begin by making a GitHub issue or sending an email to raressarmasag27@gmail.com.
 
 </div>

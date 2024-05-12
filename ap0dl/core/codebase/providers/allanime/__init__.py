@@ -3,38 +3,19 @@ from functools import partial
 
 import yarl
 
-from ....config import (
-    ALLANIME,
-    SUPERANIME_CRUNCHYROLL,
-    SUPERANIME_RETURN_ALL,
-    SUPERANIME_TYPE_OF,
-)
-from ...helpers import construct_site_based_regex, optopt
-from .superscrapers import iter_unpacked_from_packed_hls
+from ....config import ALLANIME, SUPERANIME_RETURN_ALL, SUPERANIME_TYPE_OF
+from ...helpers import construct_site_based_regex, optopt, superscrapers
+from .gql_api import api
 
-REGEX = construct_site_based_regex(ALLANIME, extra_regex=r"/anime/([^?&/]+)")
+REGEX = construct_site_based_regex(ALLANIME, extra_regex=r"/(?:anime|watch)/([^?&/]+)")
 
-SOURCE_EMBED_REGEX = optopt.regexlib.compile(
-    r'<iframe id="episode-frame" .+? src="(.+?)"'
+LEGACY_CONTENT_REGEX = optopt.regexlib.compile(
+    r'date:g,data:"({.+?})"}},calling:', optopt.regexlib.DOTALL
 )
-SOURCE_URLS = optopt.regexlib.compile(
-    r'sourceUrl[:=]"(?P<url>.+?)"[;,](?:.+?\.)?priority[:=](?P<priority>.+?)[;,](?:.+?\.)?sourceName[:=](?P<name>.+?)[,;]'
-)
-EPISODES_REGEX = optopt.regexlib.compile(r'\\"availableEpisodesDetail\\":({.+?})')
-TITLES_REGEX = optopt.regexlib.compile(r'<span class="mr-1">(.+?);?</span>')
-
-EMBED_RESOLVERS = {
-    '"Ok"': "okru",
-    '"Vid-mp4"': "gogoanime",
-    '"Mp4"': "mp4upload",
-    '"Sl-mp4"': "streamlare",
-    '"Ss-Hls"': "streamsb",
-}
 
 
 def iter_episodes(
     episode_dictionary: dict,
-    anime_page_url: str,
     *,
     selected_type_of: str = SUPERANIME_TYPE_OF,
 ):
@@ -46,135 +27,182 @@ def iter_episodes(
 
         for episode in episode_numbers:
             episodes[int(episode) if episode.isdigit() else 0].append(
-                anime_page_url + "/episodes/{}/{}".format(type_of, episode)
+                (type_of, episode)
             )
 
     yield from sorted(episodes.items(), key=lambda x: x[0])
 
 
-def unicode_escape(string: str):
-    return string.encode("utf-8").decode("unicode_escape")
+def to_clock_json(url: str):
+    parsed = yarl.URL(url)
+    return parsed.with_name("clock.json").with_query(parsed.query).human_repr()
 
 
-def to_json_url(url: "yarl.URL"):
-    return url.with_name(url.name + ".json").with_query(url.query)
+def fetch_legacy(session, episode, type_of, show_id):
+    """
+    This is a fallback method for fetching the content of an episode
+    when the GQL hits server-side rate-limits.
+    """
+
+    match = LEGACY_CONTENT_REGEX.search(
+        session.get(
+            ALLANIME + f"watch/{show_id}//episode-{episode}-{type_of}",
+        ).text
+    )
+
+    if match:
+        return (
+            optopt.jsonlib.loads(match.group(1).replace('\\"', '"'))
+            .get("data", {})
+            .get("episode", {})
+        )
+
+    return {}
 
 
-def iter_prioritised(session, urls):
+def one_digit_symmetric_xor(password: int, target: str):
+    def genexp():
+        for segment in bytearray.fromhex(target):
+            yield segment ^ password
 
-    for url, (priority, name) in urls:
-        data = session.get(url.human_repr()).text
-
-        if data == "Wrongerror":
-            continue
-
-        json_parsed = optopt.jsonlib.loads(data)["links"]
-
-        if isinstance(json_parsed, dict) and json_parsed.get("type") == "Not Found":
-            continue
-
-        def iter_all():
-            for link in json_parsed:
-
-                stream_attr = {}
-
-                if "resolution" in link:
-                    stream_attr["quality"] = link["resolution"]
-
-                if "subtitles" in link:
-                    stream_attr["subtitle"] = [_["src"] for _ in link["subtitles"]]
-
-                if "resolutionStr" in link:
-                    stream_attr["vrv"] = {
-                        "stream_type": link["resolutionStr"],
-                        "provider_configuration": SUPERANIME_CRUNCHYROLL,
-                    }
-
-                stream_url = link["link"]
-
-                yield from (
-                    iter_unpacked_from_packed_hls(
-                        session, yarl.URL(stream_url), stream_attribs=stream_attr
-                    )
-                )
-
-        yield list(iter_all())
+    return bytes(genexp()).decode("utf-8")
 
 
 def extract_content(
     session,
     content: "iter_episodes",
+    show_id: str,
     *,
-    api_endpoint: "yarl.URL",
+    api_endpoint: str,
     return_all: bool = SUPERANIME_RETURN_ALL,
 ):
-
-    for url in content:
-
-        direct_providers = set()
-        embed_providers = set()
-
-        content_page = session.get(url).text
-
-        has_on_embed = SOURCE_EMBED_REGEX.search(content_page)
-
-        if has_on_embed:
-            direct_providers.add(
-                (to_json_url(yarl.URL(has_on_embed.group(1))), ("", "embed"))
-            )
-
-        for source_urls in SOURCE_URLS.finditer(content_page):
-
-            raw_url = unicode_escape(source_urls.group(1))
-            parsed_url = yarl.URL(raw_url)
-
-            priority, name = source_urls.group("priority", "name")
-
-            if parsed_url.host is None:
-                parsed_url = api_endpoint.join(to_json_url(parsed_url))
-                direct_providers.add((parsed_url, (priority, name)))
-            else:
-                embed_providers.add((parsed_url, (priority, name)))
-
-        iterator = iter_prioritised(
-            session, sorted(direct_providers, key=lambda x: x[1][0])
+    for type_of, episode in content:
+        api_response = api.fetch_episode(
+            session, show_id, episode, translation_type=type_of
         )
 
-        if return_all:
-            yield from iterator
-        else:
-            child = next(iterator, None)
+        episode_info = api_response.get("episode") or fetch_legacy(
+            session, episode, type_of, show_id
+        )
 
-            if child is not None:
-                yield from child
+        if not episode_info:
+            continue
+
+        attrs = {}
+
+        if "notes" in episode_info and episode_info["notes"]:
+            attrs.update(title=episode_info["notes"].replace("<note-split>", " // "))
+
+        sources = sorted(
+            episode_info["sourceUrls"],
+            key=lambda value: value.get("priority", 0),
+            reverse=True,
+        )
+
+        if not sources:
+            continue
+
+        for source in sources:
+            if source["sourceUrl"][:2] == "--":
+                source["sourceUrl"] = one_digit_symmetric_xor(
+                    56, source["sourceUrl"][2:]
+                )
+
+            if source["sourceUrl"][0] == "/":
+                response = session.get(
+                    to_clock_json(api_endpoint + source["sourceUrl"])
+                )
+
+                if response.text in ("error", "error no result"):
+                    continue
+
+                streams = response.json().get("links")
+
+                if not streams:
+                    continue
+
+                for stream_data in streams:
+                    subtitles = list(
+                        map(
+                            lambda subtitles: subtitles["src"],
+                            stream_data.get("subtitles", []),
+                        )
+                    )
+
+                    attrs.setdefault("subtitle", [])
+                    attrs["subtitle"].extend(subtitles)
+
+                    if "rawUrls" in stream_data and stream_data["rawUrls"]:
+                        audio_tracks = list(
+                            map(
+                                lambda data: data["url"],
+                                stream_data["rawUrls"].get("audios", []),
+                            )
+                        )
+
+                        for data in stream_data["rawUrls"]["vids"]:
+                            yield {
+                                "quality": data["height"],
+                                "stream_url": data["url"],
+                                "audio_tracks": audio_tracks,
+                                **attrs,
+                            }
+
+                        continue
+
+                    if "link" in stream_data and stream_data["link"]:
+                        url = stream_data["link"]
+                    else:
+                        if not stream_data["portData"]["streams"]:
+                            continue
+
+                        stream = stream_data["portData"]["streams"][0]
+
+                        url = stream["url"]
+
+                    yield from superscrapers.iter_unpacked_from_packed_hls(
+                        session, yarl.URL(url), stream_attribs=attrs
+                    )
+
+                    if not return_all:
+                        return
+
+            else:
+                yield from superscrapers.iter_unpacked_from_packed_hls(
+                    session, yarl.URL(source["sourceUrl"]), stream_attribs=attrs
+                )
+                if not return_all:
+                    return
 
 
 def fetcher(session, url: "str", check, match):
-    anime_url = ALLANIME + f"anime/{match.group(1)}"
-
-    api_endpoint = yarl.URL(
+    api_endpoint = (
         session.get(ALLANIME + "getVersion").json().get("episodeIframeHead", "")
     )
 
-    for episode, content in iter_episodes(
-        optopt.jsonlib.loads(
-            EPISODES_REGEX.search(session.get(anime_url).text)
-            .group(1)
-            .replace('\\"', '"')
-        ),
-        anime_url,
-    ):
+    available_episodes = api.fetch_show_info(
+        session,
+        match.group(1),
+    ).get("availableEpisodesDetail", {})
+
+    for episode, content in iter_episodes(available_episodes):
         if check(episode):
             yield partial(
-                lambda session, content: list(
-                    extract_content(session, content, api_endpoint=api_endpoint)
+                lambda session, content, show_id: list(
+                    extract_content(
+                        session, content, show_id, api_endpoint=api_endpoint
+                    )
                 ),
                 session,
                 content,
+                match.group(1),
             ), episode
 
 
 def metadata_fetcher(session, url: "str", match):
-    anime_url = ALLANIME + f"anime/{match.group(1)}"
+    anime_name = api.fetch_show_info(
+        session,
+        match.group(1),
+    ).get("name", "")
 
-    return {"titles": TITLES_REGEX.findall(session.get(anime_url).text)}
+    return {"titles": [anime_name]}

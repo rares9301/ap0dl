@@ -2,9 +2,12 @@
 All the search algorithms for all the providers available in ap0dl.
 """
 
-import json
+from urllib.parse import unquote
 
 import lxml.html as htmlparser
+
+from ap0dl.core.codebase.providers.allanime import gql_api as allanime_gql_api
+from ap0dl.utils.powertools import ctx
 
 from ...codebase.helpers import uwu
 from ...codebase.providers.kamyroll.api import get_api
@@ -18,9 +21,10 @@ from ...config import (
     HAHO,
     HENTAISTREAM,
     KAWAIIFU,
+    MARIN,
     NINEANIME,
-    TENSHI,
     TWIST,
+    YUGEN,
     ZORO,
 )
 from .fuzzysearch import search
@@ -49,41 +53,14 @@ def search_animekaizoku(session, query):
 
 
 def search_allanime(session, query):
-
-    gql_response = session.get(
-        ALLANIME + "allanimeapi",
-        params={
-            "variables": json.dumps(
-                {
-                    "search": {
-                        "allowAdult": True,
-                        "allowUnknown": True,
-                        "query": query,
-                    },
-                    "limit": 40,
-                }
-            ),
-            "extensions": json.dumps(
-                {
-                    "persistedQuery": {
-                        "version": 1,
-                        "sha256Hash": "9c7a8bc1e095a34f2972699e8105f7aaf9082c6e1ccd56eab99c2f1a971152c6",
-                    }
-                }
-            ),
-        },
-    ).json()
-
-    for result in gql_response.get("data", {}).get("shows", {}).get("edges", []):
-        if any(a for _, a in result.get("availableEpisodes", {}).items()):
-            yield {
-                "anime_url": ALLANIME + f"anime/{result['_id']}",
-                "name": result["name"],
-            }
+    for result in allanime_gql_api.api.iter_search_results(session, query):
+        yield {
+            "anime_url": ALLANIME + f"anime/{result['_id']}",
+            "name": result["name"],
+        }
 
 
 def search_animepahe(session, query):
-
     animepahe_results = session.get(
         ANIMEPAHE + "api", params={"q": query, "m": "search"}
     )
@@ -97,7 +74,7 @@ def search_animepahe(session, query):
 
 
 def search_animeout(session, query):
-    animeout_results = session.cf_request("GET", ANIMEOUT, params={"s": query})
+    animeout_results = session.cf_request(session, "GET", ANIMEOUT, params={"s": query})
     content = htmlparser.fromstring(animeout_results.text)
 
     for result in content.xpath('//h3[@class="post-title entry-title"]/a'):
@@ -162,14 +139,43 @@ def search_crunchyroll(session, query, *, scheme="http"):
         }
 
 
-def search_tenshi(session, query, *, domain=TENSHI):
-    uwu.bypass_ddos_guard(session, domain)
-    tenshi_page = htmlparser.fromstring(
-        session.get(domain + "anime", params={"q": query}).text
+def search_marin(session, query, *, domain=MARIN):
+    session.get(domain, headers={"range": "bytes=0-0"})
+
+    response = session.post(
+        domain + "anime",
+        json={
+            "search": query,
+        },
+        headers={
+            "x-xsrf-token": unquote(session.cookies.get("XSRF-TOKEN")),
+            "x-inertia": "true",
+        },
     )
 
-    for result in tenshi_page.cssselect(".list > li > a"):
-        yield {"name": result.get("title"), "anime_url": result.get("href")}
+    ctx.update(marin_inertia_version=response.json().get("version"))
+
+    for result in (
+        response.json().get("props", {}).get("anime_list", {}).get("data", [])
+    ):
+        yield {
+            "name": result.get("title"),
+            "anime_url": domain + "anime/" + result.get("slug"),
+        }
+
+
+def search_yugen(session, query):
+    for result in search(
+        query,
+        htmlparser.fromstring(
+            session.get(YUGEN + "discover/", params={"dq": query}).text
+        ).cssselect("a.anime-meta[href][title]"),
+        processor=lambda r: r.get("title"),
+    ):
+        yield {
+            "name": result.get("title"),
+            "anime_url": YUGEN + result.get("href")[1:],
+        }
 
 
 def search_zoro(session, query):
@@ -184,16 +190,22 @@ def search_zoro(session, query):
 
 def search_h_ntai_stream(session, query):
     for result in htmlparser.fromstring(
-        session.get(HENTAISTREAM + "search/", params={"s": query}).text
-    ).cssselect("article > .bsx > a"):
+        session.get(HENTAISTREAM + "search", params={"s": query}).text
+    ).cssselect("a p.text-center"):
+        anchor = result.getparent().getparent()
         yield {
-            "name": result.get("title") or result.get("oldtitle"),
-            "anime_url": HENTAISTREAM + result.get("href")[1:],
+            "name": result.text_content(),
+            "anime_url": anchor.get("href"),
         }
 
 
 def search_haho(session, query):
-    yield from search_tenshi(session, query, domain=HAHO)
+    tenshi_page = htmlparser.fromstring(
+        session.get(HAHO + "anime", params={"q": query}).text
+    )
+
+    for result in tenshi_page.cssselect(".list > li > a"):
+        yield {"name": result.get("title"), "anime_url": result.get("href")}
 
 
 provider_searcher_mapping = {
@@ -211,7 +223,8 @@ provider_searcher_mapping = {
     "gogoanime": search_gogoanime,
     "haho": search_haho,
     "hentaistream": search_h_ntai_stream,
-    "tenshi": search_tenshi,
+    "marin": search_marin,
     "twist": search_twist,
+    "yugen": search_yugen,
     "zoro": search_zoro,
 }

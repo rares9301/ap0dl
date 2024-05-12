@@ -3,10 +3,10 @@ import time
 
 import pypresence
 
-AP0DL_APPLICATION_ID = 1061262926389973042
+ap0dl_APPLICATION_ID = 897850955373105222
 
 try:
-    presence_client = pypresence.Presence(AP0DL_APPLICATION_ID)
+    presence_client = pypresence.Presence(ap0dl_APPLICATION_ID)
 except (pypresence.DiscordNotFound, ConnectionError):
     raise RuntimeError("Could not connect to Discord.")
 
@@ -68,7 +68,7 @@ def set_streaming_episode(session, anime_name, episode):
     image = anime_attributes["posterImage"]["original"]
     count = anime_attributes["episodeCount"]
     url = "https://kitsu.io/{}/{}".format(anime['type'], anime_attributes['slug'])
-    url_button = [ { "label": "View Anime", "url": url },  { "label": "ap0 project", "url": "https://github.com/rares9301/ap0dl" } ]
+    url_button = [ { "label": "View Anime", "url": url } ]
 
     if count:
         state += "/{}".format(count)

@@ -378,7 +378,7 @@ Feel free to do so and take references from the codebase. You need not give cred
 
 ## From the author
 
-I just maintain this project for my gratification. I'd love to hear from you about your projects and problems (even unrelated to the project), so feel free to contact [me](https://github.com/justfoolingaround).
+I just maintain this project for my gratification. I'd love to hear from you about your projects and problems (even unrelated to the project), so feel free to contact [me](https://github.com/rares9301).
 
 I'm glad you're here!
 

@@ -1,6 +1,7 @@
 import functools
+from math import ceil
 
-import regex
+from ap0dl.utils import optopt
 
 from ....config import ANIMEPAHE
 from ...helpers import construct_site_based_regex
@@ -8,10 +9,14 @@ from .inner import get_animepahe_url
 
 REGEX = construct_site_based_regex(ANIMEPAHE, extra_regex=r"/(anime|play)/([^?&/]+)")
 
-ID_RE = regex.compile(r'let id = "(.+?)"')
-KWIK_RE = regex.compile(r"Plyr\|(.+?)'")
+ID_RE = optopt.regexlib.compile(r'let id = "(.+?)"')
+KWIK_RE = optopt.regexlib.compile(r"Plyr\|(.+?)'")
 
-TITLES_REGEX = regex.compile(r"<h1>(.+?)</h1>")
+STREAMS_REGEX = optopt.regexlib.compile(
+    r'<a href="(?P<url>.+?)" .+? class="dropdown-item">.+? (?P<resolution>\d+)p.+?</a>'
+)
+
+TITLES_REGEX = optopt.regexlib.compile(r"<h1>(.+?)</h1>")
 
 
 def get_streams_from_embed_url(session, embed_uri):
@@ -22,23 +27,19 @@ def get_streams_from_embed_url(session, embed_uri):
 
 
 def iter_stream_url_from_stream_session(session, release_id, stream_session):
-
     stream_url_data = session.get(
-        ANIMEPAHE + "api",
-        params={"m": "links", "id": release_id, "session": stream_session, "p": "kwik"},
+        ANIMEPAHE + f"play/{release_id}/{stream_session}",
     )
 
-    for qualities in stream_url_data.json().get("data", []):
-        for quality, data in qualities.items():
-            yield {
-                "quality": quality,
-                "stream_url": get_animepahe_url(session, data["kwik_pahewin"]),
-            }
+    for url, resolution in STREAMS_REGEX.findall(stream_url_data.text):
+        yield {
+            "quality": int(resolution),
+            "stream_url": get_animepahe_url(session, url),
+        }
 
 
 def iter_episode_streams(session, release_id, per_page, episode_number):
-
-    current_page = episode_number // per_page + 1
+    current_page = ceil(episode_number / per_page)
 
     episode = fetch_session(session, release_id, page=current_page)["data"][
         episode_number % per_page - 1
@@ -47,13 +48,6 @@ def iter_episode_streams(session, release_id, per_page, episode_number):
     yield from iter_stream_url_from_stream_session(
         session, release_id, episode["session"]
     )
-
-
-def bypass_ddos_guard(session):
-    js_bypass_uri = regex.search(
-        r"'(.*?)'", session.get("https://check.ddos-guard.net/check.js").text
-    ).group(1)
-    session.cookies.update(session.get(ANIMEPAHE + js_bypass_uri).cookies)
 
 
 @functools.lru_cache()
@@ -65,7 +59,6 @@ def fetch_session(session, release_id, *, page=None):
 
 
 def fetcher(session, url, check, match):
-
     if match.group(1) == "play":
         url = ANIMEPAHE + f"anime/{match.group(2)}"
 

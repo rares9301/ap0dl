@@ -3,6 +3,7 @@ import logging
 
 import click
 import yarl
+from rich.errors import MarkupError
 from rich.text import Text
 
 from ...__version__ import __core__
@@ -46,6 +47,7 @@ def ap0dl_stream(
     """
     Streamer call for ap0dl streaming session.
     """
+
     r = kwargs.get("range")
     console = helpers.stream_handlers.get_console()
 
@@ -78,7 +80,6 @@ def ap0dl_stream(
         ),
         name="scraping",
     ):
-
         match, provider_module, _ = providers.get_provider(
             providers.append_protocol(anime.get("anime_url"))
         )
@@ -107,9 +108,7 @@ def ap0dl_stream(
         with helpers.stream_handlers.context_raiser(
             console, f"Now streaming {content_title!r}", name="streaming"
         ):
-
             for count, (stream_urls_caller, episode_number) in enumerate(streams, 1):
-
                 if episode_number == 0:
                     episode_text = "Special Episode"
                 else:
@@ -123,7 +122,6 @@ def ap0dl_stream(
                 playing = True
 
                 while playing:
-
                     stream_urls = list(
                         helpers.ensure_extraction(
                             http_client.client, stream_urls_caller
@@ -131,7 +129,6 @@ def ap0dl_stream(
                     )
 
                     if not stream_urls:
-
                         console.print(
                             Text(
                                 f"Could not find any streams for {episode_text!r} :/."
@@ -149,17 +146,16 @@ def ap0dl_stream(
 
                     titles = set(_.get("title") for _ in stream_urls)
 
-                    if len(titles) > 1:
+                    if len(titles) > 1 and FORCE_STREAMING_QUALITY_SELECTION:
                         console.print(
                             Text(
                                 f"Multiple titles found for the same streams, multiple seasons may be available. Please adjust the quality string as required: {', '.join(map(repr, titles))}",
-                                dim=True,
+                                style="dim",
                             ),
                         )
 
                     selection = helpers.prompts.quality_prompt(
-                        logger,
-                        log_level,
+                        console,
                         stream_urls,
                         force_selection_string=quality
                         if FORCE_STREAMING_QUALITY_SELECTION
@@ -189,7 +185,7 @@ def ap0dl_stream(
                             shareable_url = yarl.URL(
                                 "https://plyr.link/p/player.html"
                             ).with_fragment(
-                                base64.urlsafe_b64encode(
+                                base64.b64encode(
                                     selection["stream_url"].encode()
                                 ).decode()
                             )
@@ -199,9 +195,13 @@ def ap0dl_stream(
                                 ),
                                 style="dim",
                             )
-                            console.print(
-                                f"[dim]Share-ables: [link={shareable_url}]embed[/], [link={selection['stream_url']}]direct url[/][/]"
-                            )
+
+                            try:
+                                console.print(
+                                    f"[dim]Share-ables: [link={shareable_url}]embed[/link], [link={selection['stream_url']}]direct url[/link][/dim]"
+                                )
+                            except MarkupError:
+                                pass
 
                         with streamer:
                             streamer.play(
@@ -210,6 +210,7 @@ def ap0dl_stream(
                                 headers=headers,
                                 subtitles=selection.get("subtitle", []),
                                 chapters=chapters,
+                                audio_tracks=selection.get("audio_tracks", []),
                             )
 
                             if DISCORD_PRESENCE:

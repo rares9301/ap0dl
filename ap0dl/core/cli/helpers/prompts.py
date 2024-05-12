@@ -32,6 +32,9 @@ def default_prompt(
         else:
             components = list(processor(component) for component in components)
 
+        if not components:
+            return fallback
+
         if len(components) == 1:
             return components[0]
 
@@ -40,24 +43,29 @@ def default_prompt(
             for component in components
         )
 
-        for n, cout in enumerate(processed_components, 1):
+        enumerated_components = tuple(enumerate(processed_components, 1))
+
+        for n, cout in reversed(enumerated_components):
             if not isinstance(cout, str):
                 raise TypeError(
                     "The stdout_processor must return a string and not {!r}.".format(
                         type(cout)
                     )
                 )
-            console.print(f"[bold blue]{n}[/bold blue].", Text(cout, style="u b red"))
+            console.print(Text(f"{n}.", style="b blue"), cout)
+
+        choices = list(map(str, range(1, len(enumerated_components) + 1)))
 
         choice = Prompt.ask(
             Text(
-                f"Select the {component_name} (automatically selects the top {component_name})",
+                f"Select the {component_name} (automatically selects the top {component_name}) ",
                 style="dim",
-            ),
+            )
+            + Text(f'[{"/".join(choices)}]', style="b blue"),
             default=1,
             console=console,
-            choices=list(map(str, range(1, n + 1))),
-            show_choices=True,
+            choices=choices,
+            show_choices=False,
         )
 
     return components[int(choice) - 1]
@@ -143,67 +151,44 @@ def get_prompt_manager(*, fallback=default_prompt):
     return fallback
 
 
-def quality_prompt(logger, log_level, streams, *, force_selection_string=None):
+def quality_prompt(console, streams, *, force_selection_string=None):
 
     if len(streams) == 1:
         return streams[0]
 
     if force_selection_string is not None:
-        return quality_prompt(
-            logger, log_level, filter_quality(streams, force_selection_string)
-        )
+        return quality_prompt(console, filter_quality(streams, force_selection_string))
 
-    component_dictionary = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+    def stream_stdout_processor(content: dict):
+        parsed_url = yarl.URL(content["stream_url"])
 
-    for count, anime in enumerate(streams, 1):
-        stream_title = click.style(anime.get("title", "Uncategorised"), fg="cyan")
-        stream_quality = click.style(
-            anime.get("quality", "Anonymous quality"), fg="magenta"
-        )
+        title = content.get("title")
 
-        substate = click.style(
-            (
-                "Hard Subtitles",
-                "Soft Subtitles",
-            )[bool(anime.get("subtitle", []))],
-            fg="yellow",
-        )
+        if title is None:
+            title = f"{parsed_url.name} // {parsed_url.host!r}"
 
-        parsed_stream_url = "{0.name} / {0.host}".format(
-            yarl.URL(anime.get("stream_url"))
-        )
+        if content.get("subtitle"):
+            title += " (with subtitles)"
 
-        component_dictionary[stream_title][stream_quality][substate].append(
-            f"{count:02d} / {parsed_stream_url}"
-        )
+        quality = content.get("quality")
 
-    for category, qualities in component_dictionary.items():
-        logger.info(category)
-        for quality, subtitles in qualities.items():
-            logger.info(quality)
-            for subtitle, animes in subtitles.items():
-                logger.info(subtitle)
-                for anime in animes:
-                    logger.info(anime)
+        if quality is not None:
+            title += f" [{quality}p]"
+        else:
+            extension = parsed_url.suffix.lstrip(".")
 
-    return streams[
-        (
-            ask(
-                log_level,
-                text="Select above, using the stream index",
-                show_default=True,
-                default=1,
-                type=int,
-            )
-            - 1
-        )
-        % len(streams)
-    ]
+            if extension in ("m3u8", "mpd", "m3u"):
+                title += f" [Adaptive quality: {extension}]"
+            else:
+                title += f" [Unknown quality: {extension}]"
 
+        return title
 
-def ask(log_level, **prompt_kwargs):
+    value = get_prompt_manager()(
+        console,
+        streams,
+        stdout_processor=stream_stdout_processor,
+        component_name="stream",
+    )
 
-    if log_level > 20:
-        return prompt_kwargs.get("default")
-
-    return click.prompt(**prompt_kwargs)
+    return value

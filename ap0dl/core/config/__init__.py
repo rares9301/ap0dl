@@ -25,53 +25,53 @@ def get_existent_path(*user_paths):
 
 
 if sys.platform == "win32":
-    USERPROFILE_AP0DL_PATH = (
+    USERPROFILE_ap0dl_PATH = (
         Path(os.getenv("LOCALAPPDATA", ".")) / ".config" / "ap0dl" / "config.yml"
     )
     OLD_DEPRECATED_PATH = Path(os.getenv("USERPROFILE")) / ".ap0dl" / "config.yml"
 
     if OLD_DEPRECATED_PATH.exists():
-        if not USERPROFILE_AP0DL_PATH.exists():
+        if not USERPROFILE_ap0dl_PATH.exists():
             warnings.warn(
                 f"The config file path @ {OLD_DEPRECATED_PATH.as_posix()} is deprecated and will be removed in the future. "
-                f"Please migrate to {USERPROFILE_AP0DL_PATH.as_posix()}. "
+                f"Please migrate to {USERPROFILE_ap0dl_PATH.as_posix()}. "
                 f"This is not done automatically because this project does not want to mess with your files.",
             )
-            USERPROFILE_AP0DLPATH = OLD_DEPRECATED_PATH
+            USERPROFILE_ap0dl_PATH = OLD_DEPRECATED_PATH
 
 else:
-    USERPROFILE_AP0DL_PATH = (
+    USERPROFILE_ap0dl_PATH = (
         Path(os.getenv("HOME", ".")) / ".config" / "ap0dl" / "config.yml"
     )
 
 CONFIGURATION_FILE_PATH = get_existent_path(
-    os.getenv("AP0DL_CONFIG", "./ap0dl_config.yml"),
+    os.getenv("ap0dl_CONFIG", "./ap0dl_config.yml"),
     "/ap0dl_config.yml",
-    USERPROFILE_AP0DL_PATH,
+    USERPROFILE_ap0dl_PATH,
 )
 
 DEFAULT_CONFIG = {
     "default_provider": "allanime",
     "site_urls": {
-        "9anime": "https://9anime.pl/",
-        "allanime": "https://allanime.site/",
+        "9anime": "https://aniwave.to/",
+        "allanime": "https://allanime.to/",
         "animekaizoku": "https://animekaizoku.com/",
-        "animeout": "https://animeout.xyz/",
-        "animepahe": "https://animepahe.com/",
+        "animeout": "https://www.animeout.xyz/",
+        "animepahe": "https://animepahe.ru/",
         "animeonsen": "https://animeonsen.xyz/",
         "animexin": "https://animexin.xyz/",
         "animixplay": "https://animixplay.to/",
         "animtime": "https://animtime.com/",
         "crunchyroll": "http://www.crunchyroll.com/",
         "kawaiifu": "https://kawaiifu.com/",
-        "gogoanime": "https://gogoanime.cm/",
+        "gogoanime": "https://gogoanime.bid/",
         "haho": "https://haho.moe/",
         "hentaistream": "https://hstream.moe/",
         "kamyroll_api": "https://kamyroll.herokuapp.com/",
-        "tenshi": "https://tenshi.moe/",
-        "nyaasi": "https://nyaa.si/",
+        "marin": "https://marin.moe/",
         "twist": "https://twist.moe/",
-        "zoro": "https://zoro.to/",
+        "yugen": "https://yugenanime.ro/",
+        "zoro": "https://aniwatch.to/",
     },
     "quality_string": "best[subtitle]/best",
     "default_player": "mpv",
@@ -109,7 +109,7 @@ DEFAULT_CONFIG = {
     "download_auto_retry": 300,
     "ffmpeg": {
         "executable": "ffmpeg",
-        "hls_download": False,
+        "use_for_downloads": False,
         "submerge": True,
     },
     "discord_presence": False,
@@ -119,6 +119,7 @@ DEFAULT_CONFIG = {
         "state": False,
     },
     "download_directory": ".",
+    "threaded_download": False,
     "check_for_updates": True,
     "force_streaming_quality_selection": True,
     "aniskip": False,
@@ -150,11 +151,11 @@ CRUNCHYROLL = SITE_URLS.get("crunchyroll")
 KAWAIIFU = SITE_URLS.get("kawaiifu")
 KAMYROLL_API = SITE_URLS.get("kamyroll_api")
 GOGOANIME = SITE_URLS.get("gogoanime")
-NYAASI = SITE_URLS.get("nyaasi")
-TENSHI = SITE_URLS.get("tenshi")
+MARIN = SITE_URLS.get("marin")
 HAHO = SITE_URLS.get("haho")
 HENTAISTREAM = SITE_URLS.get("hentaistream")
 TWIST = SITE_URLS.get("twist")
+YUGEN = SITE_URLS.get("yugen")
 ZORO = SITE_URLS.get("zoro")
 
 QUALITY = CONFIG.get("quality_string")
@@ -174,7 +175,7 @@ AUTO_RETRY = CONFIG.get("download_auto_retry", 300) / 1000
 FFMPEG_SETTINGS = CONFIG.get("ffmpeg", {})
 
 FFMPEG_EXECUTABLE = FFMPEG_SETTINGS.get("executable", "ffmpeg")
-FFMPEG_HLS = FFMPEG_SETTINGS.get("hls_download", False)
+FFMPEG_USE_FOR_DOWNLOADS = FFMPEG_SETTINGS.get("use_for_downloads", False)
 FFMPEG_SUBMERGE = FFMPEG_SETTINGS.get("submerge", True)
 
 DISCORD_PRESENCE = CONFIG.get("discord_presence", False)
@@ -185,6 +186,8 @@ FZF_OPTS = FZF.get("opts", [])
 FZF_STATE = FZF.get("state", False)
 
 DOWNLOAD_DIRECTORY = CONFIG.get("download_directory", ".")
+THREADED_DOWNLOAD = CONFIG.get("threaded_download", False)
+
 CHECK_FOR_UPDATES = CONFIG.get("check_for_updates", True)
 FORCE_STREAMING_QUALITY_SELECTION = CONFIG.get(
     "force_streaming_quality_selection", True

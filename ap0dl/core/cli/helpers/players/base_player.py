@@ -1,7 +1,7 @@
 """
 BasePlayer, (c) 2022-present, ap0dl authors
 
-Note from developer, ap0:
+Note from developer, KR:
 
 This is the base class for all players. All players
 **must** inherit from this class.

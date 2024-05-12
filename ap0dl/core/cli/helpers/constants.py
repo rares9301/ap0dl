@@ -6,4 +6,4 @@ LABELS = {
 
 SOURCE_REPOSITORY = "rares9301", "ap0dl"
 MODULE_NAME = "ap0dl"
-VERSION_FILE_PATH = "master", "ap0dl/core/__version__.py"
+VERSION_FILE_PATH = "master", "pyproject.toml"

@@ -1,3 +1,7 @@
+"""
+ap0dl: Optional optimisations for the project.
+"""
+
 try:
     import regex as regexlib
 except ImportError:
@@ -9,7 +13,7 @@ try:
     dumps_function = jsonlib.dumps
 
     def patched_dumps(*args, **kwargs):
-        return dumps_function(*args, **kwargs).decode()
+        return dumps_function(*args, **kwargs).decode("utf-8")
 
     jsonlib.dumps = patched_dumps
 

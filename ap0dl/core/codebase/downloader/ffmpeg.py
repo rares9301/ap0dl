@@ -1,12 +1,12 @@
-import contextlib
 import logging
-import os
 import shutil
 import subprocess
 from collections import defaultdict
 
 import regex
 from tqdm import tqdm
+
+from ...cli.helpers import intelliq
 
 executable = "ffmpeg"
 
@@ -47,9 +47,11 @@ def iter_audio(stderr):
         """
         A generator, that is made for sorting and sending to another generator.
         """
-        for match in regex.finditer(b"Stream #(\d+):(\d+): Audio:.+ (\d+) Hz", stderr):
+        for match in regex.finditer(
+            rb"Stream #(\d+):([\d()]+): Audio:.+ (\d+) Hz", stderr
+        ):
             program, stream_id, freq = (_.decode() for _ in match.groups())
-            yield "{}:a:{}".format(program, stream_id), int(freq)
+            yield f"{program}:a:{stream_id}", int(freq)
 
     yield from sorted(it(), key=lambda x: x[1], reverse=True)
 
@@ -102,9 +104,11 @@ def iter_quality(quality_dict):
     """
     for programs, streams in quality_dict.get("streams", {}).items():
         for stream, stream_info in streams.items():
-            yield "{}:v:{}".format(programs, stream), stream_info.get("quality") or 0, (
-                stream_info.get("audio") or [None, 0]
-            )[0][0]
+            yield {
+                "video": f"{programs}:v:{stream}",
+                "audio": (stream_info.get("audio") or [[None]])[0][0],
+                "quality": stream_info.get("quality"),
+            }
 
 
 def get_last(iterable):
@@ -114,6 +118,21 @@ def get_last(iterable):
     expansion = [*iterable]
     if expansion:
         return expansion[-1]
+
+
+def iter_from_stream(stream, *, chars=b"\r\n"):
+    """
+    Iterates over a stream, and yields the output line by line.
+    """
+    buffer = b""
+    for char in iter(lambda: stream.read(1), b""):
+        if char in chars:
+            yield buffer
+            buffer = b""
+        else:
+            buffer += char
+    if buffer:
+        yield buffer
 
 
 def ffmpeg_to_tqdm(
@@ -137,14 +156,14 @@ def ffmpeg_to_tqdm(
 
     """
     progress_bar = tqdm(
-        desc="HLS, FFMPEG / GET {}.mkv".format(outfile_name),
+        desc="FFMPEG / {}".format(outfile_name),
         total=duration,
         unit="segment",
     )
     previous_span = 0
 
-    for stream in process.stdout:
-        logger.debug("[ffmpeg] {}".format(stream.decode().strip()))
+    for stream in iter_from_stream(process.stderr):
+        logger.debug(f"[ffmpeg] {stream.decode().strip()}")
         current = get_last(regex.finditer(b"\stime=((?:\d+:)+\d+)", stream))
         if current:
             in_seconds = (
@@ -160,11 +179,10 @@ def ffmpeg_to_tqdm(
 def ffmpeg_download(
     url: str,
     headers: dict,
-    outfile_name: str,
-    content_dir,
-    preferred_quality=1080,
+    expected_download_path,
+    preferred_quality: str = "1080",
     log_level=20,
-    **opts
+    **opts,
 ) -> int:
     """
     Downloads content using ffmpeg and optionally uses tqdm to wrap the progress
@@ -182,18 +200,14 @@ def ffmpeg_download(
     ---
 
     `int` The ffmpeg child process' return code.
-
     """
 
-    logger = logging.getLogger("ffmpeg-hls-download[{}.mkv]".format(outfile_name))
+    logger = logging.getLogger(f"ffmpeg[{expected_download_path.name}]")
     logger.debug("Using ffmpeg to download content.")
 
     stream_info = analyze_stream(logger, url, headers)
 
-    file = content_dir / ("{}.mkv".format(outfile_name))
-
-    with contextlib.suppress(FileNotFoundError, OSError):
-        os.remove(file)
+    expected_download_path.unlink(missing_ok=True)
 
     args = [executable, "-hide_banner"]
 
@@ -202,38 +216,42 @@ def ffmpeg_download(
             ("-headers", "\r\n".join("{}:{}".format(k, v) for k, v in headers.items()))
         )
 
-    args.extend(("-i", url, "-c", "copy", file.as_posix()))
+    args.extend(("-i", url, "-c", "copy", expected_download_path.as_posix()))
 
-    for video, quality, audio in filter(
-        lambda x: x[1] <= preferred_quality,
-        sorted(iter_quality(stream_info), key=lambda x: x[1], reverse=True),
-    ):
-        if quality < preferred_quality:
-            logger.warning(
-                "Could not find the stream of desired quality {}, currently downloading {}.".format(
-                    preferred_quality, quality or "an unknown quality"
-                )
-            )
+    qualities = list(iter_quality(stream_info))
+    ffmpeg_video = sorted(
+        intelliq.filter_quality(qualities, preferred_quality) or qualities,
+        key=lambda q: q["quality"],
+        reverse=True,
+    )[0]
 
-        child = subprocess.Popen(
-            args + ["-map", video, "-map", audio],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-        )
+    ffmpeg_args = args.copy()
 
-        if log_level > 20:
-            return child.wait()
+    if ffmpeg_video["video"]:
+        ffmpeg_args.extend(("-map", ffmpeg_video["video"]))
 
-        return ffmpeg_to_tqdm(
-            logger,
-            child,
-            duration=stream_info.get("duration"),
-            outfile_name=outfile_name,
-        ).returncode
+    if ffmpeg_video["audio"]:
+        ffmpeg_args.extend(("-map", ffmpeg_video["audio"]))
+
+    logger.debug(f"Calling PIPE child process for ffmpeg: {ffmpeg_args}")
+
+    child = subprocess.Popen(
+        ffmpeg_args,
+        stderr=subprocess.PIPE,
+    )
+
+    if log_level > 20:
+        return child.wait()
+
+    return ffmpeg_to_tqdm(
+        logger,
+        child,
+        duration=stream_info.get("duration"),
+        outfile_name=expected_download_path.name,
+    ).returncode
 
 
 def merge_subtitles(video_path, out_path, subtitle_paths, log_level=20):
-
     args = [
         executable,
         "-hide_banner",
