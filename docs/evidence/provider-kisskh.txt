@@ -1,0 +1,1 @@
+{"provider": "kisskh", "search_results": 3, "selected_title": "Bocchi the Rock!", "episode_count": 12, "streams": [{"quality": 720, "kind": "hls", "title": "KissKH 720p"}], "required_stream": {"quality": 720, "kind": "hls"}}

@@ -1,0 +1,112 @@
+{
+  "anime": {
+    "cover": "https://www.themoviedb.org/t/p/w1000_and_h563_face/ur4k4KJIg1NSg1XnQWZ2pxgHT6i.jpg",
+    "description": "Hitori Gotou is a high school girl who's starting to learn to play the guitar because she dreams of being in a band, but she's so shy that she hasn't made a single friend. However, her dream might come true after she meets Nijika Ijichi, a girl who plays drums and is looking for a new guitarist for her band.",
+    "format": "Anime",
+    "id": "6253",
+    "provider": "kisskh",
+    "status": "Completed",
+    "title": "Bocchi the Rock!",
+    "total_episodes": 12,
+    "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253",
+    "year": 2022
+  },
+  "episodes": [
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "108264",
+      "number": 1.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=108264"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "109014",
+      "number": 2.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=109014"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "109487",
+      "number": 3.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=109487"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "109975",
+      "number": 4.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=109975"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "110615",
+      "number": 5.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=110615"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "111221",
+      "number": 6.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=111221"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "111675",
+      "number": 7.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=111675"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "112807",
+      "number": 8.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=112807"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "113327",
+      "number": 9.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=113327"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "113815",
+      "number": 10.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=113815"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "114391",
+      "number": 11.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=114391"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "115019",
+      "number": 12.0,
+      "recap": false,
+      "url": "https://kisskh.co/drama/bocchi-the-rock?id=6253&ep=115019"
+    }
+  ]
+}

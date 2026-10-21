@@ -1,0 +1,390 @@
+use std::net::SocketAddr;
+
+use axum::Router;
+use axum::extract::{Query, State};
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
+use reqwest::Client;
+use url::Url;
+
+use crate::error::{Error, Result};
+use crate::models::FlixInfo;
+
+const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
+/// A tiny local HLS proxy for flixcloud.
+///
+/// The upstream master playlist is encrypted and the segment/key URLs need
+/// `Referer`/`Origin` headers. This proxy:
+///
+/// - fetches the plaintext playlist through the enc-dec proxy;
+/// - rewrites every manifest, key and segment URI to a local URL;
+/// - adds the flixcloud headers to upstream requests;
+/// - strips fake PNG/WebP segment headers and applies the XOR mask when
+///   present, leaving AES-128 ciphertext for the player to decrypt normally.
+pub struct FlixProxy {
+    addr: SocketAddr,
+    handle: tokio::task::JoinHandle<()>,
+    info: FlixInfo,
+}
+
+impl FlixProxy {
+    pub async fn start(info: FlixInfo) -> Result<Self> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(Error::Io)?;
+        let addr = listener.local_addr().map_err(Error::Io)?;
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .build()
+            .map_err(|error| Error::config(format!("proxy client: {error}")))?;
+
+        let state = ProxyState {
+            client,
+            addr,
+            info: info.clone(),
+        };
+        let app = Router::new()
+            .route("/proxy", get(handle_proxy))
+            .with_state(state);
+        let handle = tokio::spawn(async move {
+            if let Err(error) = axum::serve(listener, app).await {
+                tracing::warn!(%error, "flixcloud proxy stopped");
+            }
+        });
+
+        Ok(Self { addr, handle, info })
+    }
+
+    pub fn address(&self) -> SocketAddr {
+        self.addr
+    }
+
+    /// Local URL for the stream's master playlist.
+    pub fn url(&self) -> String {
+        self.local_url(&self.info.master_url, &self.info.w_payload, None)
+    }
+
+    fn local_url(&self, upstream: &str, w_payload: &str, base: Option<&str>) -> String {
+        let mut url = format!(
+            "http://{}/proxy?url={}&w_payload={}",
+            self.addr,
+            urlencoding::encode(upstream),
+            urlencoding::encode(w_payload)
+        );
+        if let Some(base) = base {
+            url.push_str("&base=");
+            url.push_str(&urlencoding::encode(base));
+        }
+        url
+    }
+}
+
+impl Drop for FlixProxy {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+#[derive(Clone)]
+struct ProxyState {
+    client: Client,
+    addr: SocketAddr,
+    info: FlixInfo,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct ProxyParams {
+    url: String,
+    #[serde(default)]
+    w_payload: Option<String>,
+    #[serde(default)]
+    base: Option<String>,
+}
+
+async fn handle_proxy(
+    State(state): State<ProxyState>,
+    Query(params): Query<ProxyParams>,
+) -> Response {
+    tracing::debug!(url = %params.url, base = ?params.base, manifest = is_manifest(&params.url), key = is_key(&params.url), "proxy request");
+    let w_payload = params
+        .w_payload
+        .unwrap_or_else(|| state.info.w_payload.clone());
+
+    if is_manifest(&params.url) {
+        return match fetch_text(&state, &params.url).await {
+            Ok(text) => {
+                let base = params
+                    .base
+                    .clone()
+                    .or_else(|| decode_proxy_url(&params.url))
+                    .unwrap_or_else(|| params.url.clone());
+                let rewritten = rewrite_manifest(&state, &text, &base, &w_payload);
+                (
+                    [(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")],
+                    rewritten,
+                )
+                    .into_response()
+            }
+            Err(error) => error_response(error),
+        };
+    }
+
+    if is_key(&params.url) {
+        return match fetch_bytes(&state, &params.url).await {
+            Ok(bytes) => {
+                ([(header::CONTENT_TYPE, "application/octet-stream")], bytes).into_response()
+            }
+            Err(error) => error_response(error),
+        };
+    }
+
+    match fetch_bytes(&state, &params.url).await {
+        Ok(bytes) => {
+            let decoded = decode_segment(bytes, &state.info.xor_mask);
+            ([(header::CONTENT_TYPE, "video/mp2t")], decoded).into_response()
+        }
+        Err(error) => error_response(error),
+    }
+}
+
+fn error_response(error: Error) -> Response {
+    let body = format!("ap0dl proxy: {error}");
+    (
+        StatusCode::BAD_GATEWAY,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        body,
+    )
+        .into_response()
+}
+
+fn is_manifest(url: &str) -> bool {
+    let path = url
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_ascii_lowercase();
+    if path.ends_with(".m3u8") {
+        return true;
+    }
+    // enc-dec's parse-flixcloud endpoint returns a rewritten playlist even
+    // though its path has no .m3u8 suffix.
+    Url::parse(url)
+        .ok()
+        .and_then(|url| url.host_str().map(|host| host.ends_with("enc-dec.app")))
+        .unwrap_or(false)
+        && path.contains("parse-flixcloud")
+}
+
+fn is_key(url: &str) -> bool {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    path.ends_with("key.bin") || path.ends_with(".key")
+}
+
+async fn fetch_text(state: &ProxyState, url: &str) -> Result<String> {
+    let response = request(state, url).await?;
+    response.text().await.map_err(|source| Error::Http {
+        url: url.to_string(),
+        source,
+    })
+}
+
+async fn fetch_bytes(state: &ProxyState, url: &str) -> Result<bytes::Bytes> {
+    let response = request(state, url).await?;
+    response.bytes().await.map_err(|source| Error::Http {
+        url: url.to_string(),
+        source,
+    })
+}
+
+async fn request(state: &ProxyState, url: &str) -> Result<reqwest::Response> {
+    let mut request = state.client.get(url).header(header::USER_AGENT, USER_AGENT);
+    let host = Url::parse(url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_default();
+    if host.ends_with("enc-dec.app") {
+        request = request.header(header::REFERER, "https://enc-dec.app/");
+    } else {
+        request = request
+            .header(header::REFERER, "https://flixcloud.cc/")
+            .header(header::ORIGIN, "https://flixcloud.cc")
+            .header(header::ACCEPT, "*/*");
+    }
+    let response = request.send().await.map_err(|source| Error::Http {
+        url: url.to_string(),
+        source,
+    })?;
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        return Err(Error::HttpStatus {
+            status,
+            url: url.to_string(),
+        });
+    }
+    Ok(response)
+}
+
+fn rewrite_manifest(state: &ProxyState, text: &str, base: &str, w_payload: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 512);
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            out.push('\n');
+            continue;
+        }
+
+        if trimmed.starts_with("#EXT-X-KEY")
+            || trimmed.starts_with("#EXT-X-MAP")
+            || trimmed.starts_with("#EXT-X-MEDIA")
+        {
+            out.push_str(&rewrite_uri_attribute(state, line, base, w_payload));
+            out.push('\n');
+            continue;
+        }
+
+        if trimmed.starts_with('#') {
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+
+        let absolute = resolve_uri(base, trimmed);
+        let next_base = decode_proxy_url(&absolute).unwrap_or_else(|| absolute.clone());
+        out.push_str(&local_url(state, &absolute, w_payload, Some(&next_base)));
+        out.push('\n');
+    }
+    out
+}
+
+fn rewrite_uri_attribute(state: &ProxyState, line: &str, base: &str, w_payload: &str) -> String {
+    let Some(uri_start) = line.find("URI=") else {
+        return line.to_string();
+    };
+    let after = &line[uri_start + 4..];
+    let (quote, rest) = match after.chars().next() {
+        Some(quote @ ('"' | '\'')) => (quote, &after[quote.len_utf8()..]),
+        _ => return line.to_string(),
+    };
+    let Some(end) = rest.find(quote) else {
+        return line.to_string();
+    };
+    let uri = &rest[..end];
+    let mut absolute = resolve_uri(base, uri);
+    // enc-dec sometimes absolutizes key URIs to its own /api/key.bin, which
+    // does not exist. The real key lives next to the original manifest.
+    if absolute.contains("enc-dec.app/api/key.bin") {
+        absolute = resolve_uri(base, "key.bin");
+    }
+    let local = local_url(state, &absolute, w_payload, Some(base));
+    format!(
+        "{}URI={quote}{local}{quote}{}",
+        &line[..uri_start],
+        &rest[end + quote.len_utf8()..]
+    )
+}
+
+fn local_url(state: &ProxyState, upstream: &str, w_payload: &str, base: Option<&str>) -> String {
+    let mut url = format!(
+        "http://{}/proxy?url={}&w_payload={}",
+        state.addr,
+        urlencoding::encode(upstream),
+        urlencoding::encode(w_payload)
+    );
+    if let Some(base) = base {
+        url.push_str("&base=");
+        url.push_str(&urlencoding::encode(base));
+    }
+    url
+}
+
+fn resolve_uri(base: &str, href: &str) -> String {
+    if href.starts_with("http://") || href.starts_with("https://") {
+        return href.to_string();
+    }
+    if href.starts_with("//") {
+        return format!("https:{href}");
+    }
+    Url::parse(base)
+        .and_then(|base| base.join(href))
+        .map(|url| url.to_string())
+        .unwrap_or_else(|_| href.to_string())
+}
+
+fn decode_proxy_url(value: &str) -> Option<String> {
+    let url = Url::parse(value).ok()?;
+    if !url.path().contains("parse-flixcloud") && !url.path().contains("dec-flixcloud") {
+        return None;
+    }
+    url.query_pairs()
+        .find(|(key, _)| key == "url")
+        .map(|(_, value)| value.to_string())
+}
+
+fn decode_segment(data: bytes::Bytes, mask: &[u8]) -> bytes::Bytes {
+    let (skip, should_xor) = detect_image_header(&data);
+    if skip == 0 && !should_xor {
+        return data;
+    }
+
+    let payload = &data[skip..];
+    if !should_xor || mask.is_empty() {
+        return bytes::Bytes::copy_from_slice(payload);
+    }
+    let mut decoded = payload.to_vec();
+    for (index, byte) in decoded.iter_mut().enumerate() {
+        *byte ^= mask[index % mask.len()];
+    }
+    bytes::Bytes::from(decoded)
+}
+
+fn detect_image_header(data: &[u8]) -> (usize, bool) {
+    if data.len() >= 12 && &data[0..4] == b"RIFF" && &data[8..12] == b"WEBP" {
+        return (12, true);
+    }
+    if data.len() >= 8 && &data[0..8] == b"\x89PNG\r\n\x1a\n" {
+        return (8, true);
+    }
+    (0, false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detects_png_and_webp() {
+        assert_eq!(detect_image_header(b"\x89PNG\r\n\x1a\nrest"), (8, true));
+        assert_eq!(detect_image_header(b"RIFF0000WEBPrest"), (12, true));
+        assert_eq!(detect_image_header(b"\x47\x40\x11\x10"), (0, false));
+    }
+
+    #[test]
+    fn resolves_relative_uris() {
+        assert_eq!(
+            resolve_uri("https://fetch9.flixcloud.cc/a/video.m3u8", "key.bin"),
+            "https://fetch9.flixcloud.cc/a/key.bin"
+        );
+    }
+
+    #[test]
+    fn recognizes_enc_dec_manifests() {
+        assert!(is_manifest("https://enc-dec.app/api/parse-flixcloud?url=x"));
+        assert!(is_manifest(
+            "https://fetch9.flixcloud.cc/a/master.m3u8?token=x"
+        ));
+        assert!(!is_manifest("https://fetch9.flixcloud.cc/a/seg-1.png"));
+    }
+
+    #[test]
+    fn decodes_proxy_url() {
+        let encoded = urlencoding::encode("https://fetch9.flixcloud.cc/a/video.m3u8");
+        let value = format!("https://enc-dec.app/api/parse-flixcloud?url={encoded}&w_payload=x");
+        assert_eq!(
+            decode_proxy_url(&value).as_deref(),
+            Some("https://fetch9.flixcloud.cc/a/video.m3u8")
+        );
+    }
+}

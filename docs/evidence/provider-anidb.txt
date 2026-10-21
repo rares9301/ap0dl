@@ -1,0 +1,1 @@
+{"provider": "anidb", "search_results": 1, "selected_title": "Bocchi the Rock!", "episode_count": 12, "streams": [{"quality": 1080, "kind": "hls", "title": "[Sub] SUB Server #1 1080p"}], "required_stream": {"quality": 1080, "kind": "hls"}}

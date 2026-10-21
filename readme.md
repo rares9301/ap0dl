@@ -1,418 +1,228 @@
-<h1 align="center"><img src="https://capsule-render.vercel.app/api?type=soft&fontColor=703ee5&text=rares9301/ap0dl&height=160&fontSize=60&desc=Efficient,%20fast%20and%20light-weight.&descAlignY=75&descAlign=60&color=00000000&animation=twinkling"></h1>
-<p align="center"><sup>Joint project of animdl, the fearsome ap0dl</sup></p>
+# ap0dl — typed async Rust engine
 
+ap0dl is now a Rust workspace with a typed, asynchronous provider engine. The
+original Python package remains in the repository for migration/reference, but
+the `ap0dl` binary is the Rust implementation in `crates/ap0dl-cli`.
 
-<p align="center">
-<img src="https://i.imgur.com/SIuJWJ9.png"></p>
+The engine was built against live sites, with the Aniyomi extension sources used
+as behavioural references. Only providers that passed a live
+search → details → episodes → stream smoke test are registered.
 
--------
-
-## Overview
-
-- [Installation](#installation)
-    1. [PIP Installation](#installation)
-    2. [Source Code Download](#installation)
-- [Support](#support)
-- [Usage](#usage)
-  - [`stream` / `download` / `grab`](#stream--download--grab)
-  - [`-r` / `--range`](#-r----range-argument)
-  - [`--index`](#--index-argument)
-  - [`-s` / `--special`](#-s----special-argument)
-  - [`-q` / `--quality`](#-q----quality-argument)
-  - [**More** usage](#conclusion)
-- [Providers](#providers)
-- [Configurations](#configurations)
-  - [Setting up providers](#setting-up-providers)
-  - [Quality selection](#quality-selection)
-  - [Player selection](#player-selection)
-  - [`ffmpeg` set-up](#ffmpeg-set-up)
-  - [Discord Rich Presence set-up](#discord-rich-presence-set-up)
-  - [`fzf` set-up](#fzf-set-up)
-  - [Schedule set-up](#schedule-set-up)
-- [Contributing to the project](#contributing-to-the-project)
-- [Project Disclaimer](#project-disclaimer)
-- [In a nutshell](#in-a-nutshell)
-- [Code redistribution](#code-redistribution)
-- [From the author](#from-the-author)
-- [Honourable mentions](#honourable-mentions)
-  - [Similar Projects](#similar-projects)
-  - [Internal Dependencies](#internal-dependencies)
-- [Sponsoring the project](#sponsoring-the-project)
-
-## Installation
-
-This project can be installed on to your device via pip or SC download
-
-1. PIP Installs Packages **aka** PIP Installation
-
-    ```sh
-    pip install ap0dl
-    ```
-
-2. Source Code Download
-
-    ```sh
-    git clone https://www.github.com/rares9301/ap0dl
-    ```
-
-    After the repository is downloaded and placed in an appropriate directory, you can, either use [`runner.py`](./runner.py) to use the project without installation **or** use [`setup.py`](./setup.py) to proceed with the installation.
-
-    The former can be done via:
-
-    ```py
-    python runner.py
-    ```
-
-    The latter can be done via:
-
-    ```py
-    pip install .
-    ```
-
-    Both commands are to be executed from the directory where the repository is located.
-
-**Additional information:** You **must** have Python installed **and** in PATH to use this project properly. Your Python executable may be `py` **or** `python` **or** `python3`. **Only Python 3.6 and higher versions are supported by the project.**
-
-## Support
-
-You can contact the developer directly via this [email](mailto:rares.sarmasag@cnmbct.ro). 
-
-<p align="center">
-<img src="https://discord-readme-badge.vercel.app/api?id=299220016530849793">
-</p>
-
-## Usage
-
-```txt
-Usage: ap0dl [OPTIONS] COMMAND [ARGS]...
-
-Options:
-  --help  Show this message and exit.
-
-Commands:
-  download  Download your favorite anime by query.
-  grab      Stream the stream links to the stdout stream for external usage.
-  schedule  Know which animes are going over the air when.
-  search    Search for an anime in the provider.
-  stream    Stream your favorite anime by query.
-```
-
-The `stream` option is disabled automatically if the project cannot find any of the supported streamers.
-
-### `stream` / `download` / `grab`
-
-These commands are the main set of command in the project. All of them scrape the target site, the only difference is how it is used.
-
-- The `stream` option tosses the stream url to a player so that you can seamlessly binge your anime.
-  - Streaming supports Discord Rich Presence with `pypresence`.
-- The `download` option downloads the anime to your local machine.
-  - Downloading is done in the directory where you run the project.
-  - `-d` flag can be used to specify a download folder as well.
-  - [Internet Download Manager](https://internetdownloadmanager.com/) is supported and can be used via `--idm` flag. This downloader cannot download HLS streams.
-  - The project cannot modify the content type. That means, videos in the `ts` format need to be converted to other formats externally post download.
-  - The downloading process cannot be controlled.
-    - If download speed fluctuates, it is a server-side problem. The project cannot "fix" it.
-    - If the download is slow, it is based on the server's upload speed. The project cannot "fix" it. **Speedtests are not reliable and their results will not correspond to the download speeds obtained through the project.**
-  - The project utilises the fastest and the most straight-forward way to download, there is no further optimisation, period.
-
-- The `grab` option simply streams the stream url to the stdout stream.
-  - This is useful for external usage and testing.
+## Build
 
 ```sh
-ap0dl stream "One Piece" 
+cargo build --release
+./target/release/ap0dl --help
 ```
 
-<p align="center">
-<sub>
-Providers can be specified by using provider prefix, <code>9anime:One Piece</code>, will use the 9Anime provider.
-</sub></p>
+Requires a current stable Rust toolchain (workspace MSRV: 1.85). No Python
+runtime is needed for the Rust binary.
 
-<p align="center">
-<sub>
-You can specify direct urls to the provider; the project will automatically detect the provider and continue scraping. This method ignores searching.<sub></p>
-
-### `-r` / `--range` argument
-
-This argument is shared by **stream**, **download** and **grab**, it can be used to hand over custom ranges for selecting episodes.
-
-- This argument constructs a check for the episodes, hence, will not throw error if the episode count does not meet the scraping count.
-- This argument can be used in **reverse** order, the constructer will automatically fix the order.
-- Range intersections will not cause issues.
-- `1` will be treated as a singular range from 1 to 1.
-- `1-2` will be treated as a range from 1 to 2.
-- `1-2,230-340` will be treated as two different checks. The first check will be from `1` to `2`, the second from `230` to `340`.
-- You can use any separators, the project will automatically parse your range string.
-
-### `--index` argument
-
-This argument is shared by **stream**, **download** and **grab**, it can be used to automatically select the search result. The default argument for index is `1`, that is, the first stream.
-
-`--index 2` will automatically select the second search result without prompt.
-
-### `-s` / `--special` argument
-
-This argument is shared by **stream** and **download**, it can be used to hand over the latest episode of the anime by using `-s latest`. Similarly, the latest 2 episodes can be selected via `latest-2`.
-
-This argument changes the **flow** of episodes. This means, this will not isolate the other streams but just bring forward the required episodes. If an anime has 10 episodes, the flow will be changed to `10, 1, 2, 3, 4, 5, 6, 7, 8, 9` if `latest` is in used.
-
-- This argument is compatible with `-r`, you will get the last episode of the range.
-
-### `-q` / `--quality` argument
-
-This argument is incredibly powerful and can be used to select streams from their **attributes**.
-
-- `1080` will select the stream with the resolution of 1080.
-- `1080/worst` will do the above but will also select the worst quality stream if that stream is not available.
-- `best[title]` will select the best stream that has the `title` attribute.
-- `best[title=r'^DUB']` will select the stream with the `title` attribute that matches the regular expression. If `r` is not used, the expression will be treated as a literal string.
-- The normal integers can be substituted with `best` and `worst` for special parsing.
-- You need not mention the quality in the argument if you just want an attribute.
-
-You can find out what attributes are available for each stream by using the `grab` command.
-
-```json
-[
-  {
-    "stream_url": "https://yqwym.vizcloud.digital/simple/EqPFI_kQBAro1HhYl67rC8UuoVwHubb7CkJ7rqk+wYMnU94US2El/br/list.m3u8#.mp4",
-    "headers": {
-      "referer": "https://vizcloud.digital/embed/83P7OX0N8PLE"
-    }
-  },
-  {
-    "stream_url": "https://yqwym.vidstream.pro/EqPVIPsMWl322yVezviuGdNz9wsVp_2ySFow5Od52MBlQ9QQG34s9aQ0yhbkTfyI+tzdG4991O3X4fVqACOikmeZRvMNGrBeQ5aivXxFIkYzNJElHAM1icyfowvCviiceQevRCxV9F7i7CIYt0hIz61716gsQxXskJ6eV4Gg4_OC/br/list.m3u8",
-    "headers": {
-      "referer": "https://vizcloud.digital/embed/83P7OX0N8PLE"
-    }
-  },
-  {
-    "stream_url": "https://yzqq.mcloud.to/12a3c523f910040ae8d4785897aeeb0bc52ea15c07b9b6fb0a427baea96ed0842f54d0184c6820e9f935c248a146eb8df28cc21a817ad2e8c0eefd680420a692659945f21618bd454698bcbf6e42394f3d4ee734180c3281ce9bb00fcaa2298e7913aa40036bbb0abaf07046a14442c2f32c9df66b1a/r/list.m3u8",
-    "headers": {
-      "referer": "https://mcloud.to/embed/k18xp6"
-    }
-  }
-]
-```
-
-This is the prettified output of `ap0dl grab "9anime:one piece"`, and the stream has `headers` and `stream_url` attributes.
-
-If you feel that a particular stream is fast enough for you, `-q [stream_url=r'.+mcloud\.to.+']`<sub>(or equivalent, this is just for testing)</sub> will select that stream.
-
-### Conclusion
-
-This project posses powerful commands and arguments to aid them, there are **many** arguments that aren't specified here but are available in the project. This is done because these commands are advanced usage commands which may just cause confusion. Feel free to ask about them.
-
-## Providers
-
-| Website                                      | Searcher Prefix      | Available Qualities | Status / Elapsed Time | Content Extension |
-| :------------------------------------------: | :-----------------: | :-----------------:  | :----: | :-----------------: |
-| [9Anime](https://9anime.to/)                 | `9anime`             | 720p, 1080p | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/nineanime.png">  | MP4 / TS  |
-| [AllAnime](https://allanime.site/)           | `allanime`            | 720p, 1080p | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/allanime.png">  | MP4 / TS          |
-| [AnimePahe](https://www.animepahe.com/)      | `animepahe`          | 720p, 1080p         | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/animepahe.png">  | MP4               |
-| [AnimeOut](https://www.animeout.xyz/)        | `animeout`           | 720p, 1080p         | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/animeout.png">  | MKV               |
-| [Animixplay](https://www.animixplay.to/)     | `animixplay`         | 480p, 720p, 1080p   | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/animixplay.png">  | MP4 / TS          |
-| [Animtime](https://animtime.com/)            | No searcher included | 720p, 1080p         |  <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/animtime.png">   | MP4               |
-| [Crunchyroll](https://www.crunchyroll.com/)  | `crunchyroll`        | All                 |  <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/crunchyroll.png">   | TS                |
-| [Kawaiifu](https://www.kawaiifu.com/) (NSFW) | `kawaiifu`           | 720p, 1080p         |  <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/kawaiifu.png">   | MP4               |
-| [GogoAnime](https://www.gogoanime.pe/)       | `gogoanime`          | 480p, 720p, 1080p   | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/gogoanime.png">  | MP4 / TS          |
-| [Haho](https://www.haho.moe/) (NSFW)         | `haho`           | 720p, 1080p         | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/haho.png">  | MP4               |
-| [Tenshi](https://www.tenshi.moe/)            | `tenshi`             | 720p, 1080p         | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/tenshi.png">  | MP4               |
-| [Twist](https://www.twist.moe/)              | `twist`              | 720p, 1080p         | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/twist.png">  | MP4               |
-| [Zoro](https://www.zoro.to/)                 | `zoro`   | 720p, 1080p         | <img height="25" src="https://github.com/justfoolingaround/animdl-provider-benchmarks/raw/master/api/providers/zoro.png">  | TS |
-
-The images above are automatically updated every few hours, hence, please be aware that the developers already know what's broken.
-
-Some providers may not work due to DDoS protection services. We try our best to fix what's fixable. There are plenty of alternatives even if one goes down in the project.
-
-<p align="center"><b>The project contains providers that aren't mentioned here. This is intentional.</b></p>
-
-## Configurations
-
-Configuration files can be globally or locally be specified.
-
-You can use the `AP0DL_CONFIG` environment variable to specify a configuration file on a global level.
-
-Else, a file with the name `ap0dl_config.yml` in the working directory will be used if available.
-
-Futhermore, the configuration files can be globally placed at:
-
-- Windows:
-  - `%USERPROFILE%/.ap0dl/config.yml`
-- Anything else:
-  - `$HOME/.config/ap0dl/config.yml`
-
-Only a singular configuration file in the above priority order is used, configurations aren't merged.
-
-### Setting up providers
-
-You can specify a default provider using the `default_provider` configuration option.
-
-```yml
-default_provider: animixplay
-```
-
-This project uses a standardised url **per** provider. This makes the project capable of using different **official** proxies of the same provider.
-
-This can be specified via `site_urls` by using the following configuration.
-
-```yml
-site_urls:
-    animixplay: https://www.animixplay.to/
-```
-
-### Quality selection
-
-You can specify a default quality using the `quality_string` configuration option.
-
-```yml
-quality_string: best[subtitle]/best
-```
-
-### Player selection
-
-You can specify a default player using the `default_player` configuration option.
-
-```yml
-default_player: mpv
-```
-
-You can change player attributes, such as, what the `executable` is and what `opts` are to be passed during the player call.
-
-```yml
-players:
-    mpv:
-        executable: mpv
-        opts: []
-```
-
-If the executable is found, the player will be eligible for use.
-
-Currently supported players are:
-
-- [`mpv`](https://mpv.io/)
-- [`vlc`](https://www.videolan.org/vlc/)
-- [`iina`](https://iina.io/)
-- [`celluloid`](https://celluloid-player.github.io)
-- [`ffplay`](https://www.ffmpeg.org/ffplay.html)
-- `android` (Android Player, only available **when** there aren't any headers for the stream)
-
-### ffmpeg set-up
-
-You can make the project force `ffmpeg` for HLS downloading (awfully slow) and merging subtitles for downloads when external subtitles are available.
-
-```yml
-ffmpeg:
-    executable: ffmpeg
-    hls_download: false
-    submerge: true
-```
-
-### Discord Rich Presence set-up
-
-This project supports RPC clients, this can be enabled **only** from the configuration. To use this, you must have `pypresence` installed via:
+## Quick start
 
 ```sh
-pip install pypresence
+# Search the default provider
+ap0dl search "Bocchi the Rock"
+
+# Pick a provider explicitly
+ap0dl search "anidb:Bocchi the Rock"
+ap0dl episodes "anidb:Bocchi the Rock" --json
+
+# Resolve streams (JSON for external tools)
+ap0dl grab "anidb:Bocchi the Rock" --range 1 --quality 1080
+ap0dl grab "kisskh:Bocchi the Rock" --range 1
+
+# Print one playable URL
+ap0dl stream "reanime:Bocchi the Rock" --range 1 --print-url
+
+# Download
+ap0dl download "animegg:Bocchi the Rock" --range 1-3 -d ./downloads
 ```
 
-```yml
-discord_presence: true
+Provider prefixes use `provider:query`. A provider URL can also be passed
+directly (`https://kisskh.co/drama/...`), in which case the engine selects the
+provider by hostname. Search result selection is one-based via `--index`.
+
+## Working providers
+
+Live smoke tests were run on 2026-10-21. "1080p" means the provider exposed a
+1080p variant in the tested stream; availability can vary by title/episode.
+
+| ID | Source | Status | Search/details/episodes | Stream path | 1080p observed |
+|---|---|---|---|---|---|
+| `reanime` | Re:Anime (`reanime.to`) | stable | live | HLS via Flixcloud + local decrypt proxy | **yes** — Bocchi E1: HD-1/HD-2 1080p |
+| `animegg` | AnimeGG (`animegg.org`) | stable | live | direct MP4 qualities | **yes** — Frieren S2 E1 1080p; Bocchi E1 is 720p/480p upstream |
+| `anidb` | AniDB / Anila (`anilab2.amdapi.click`, `play.anidb.app`) | stable | live | HLS masters | **yes** — Bocchi E1: 1080p, 720p, 360p |
+| `kisskh` | KissKH (`kisskh.co`) | stable | live | HLS/CDN via public episode-key service | 720p observed (Bocchi, Frieren, Solo Leveling); source-dependent |
+
+The default quality is `best`, so the highest advertised stream wins. Explicit
+selectors are available:
+
+```sh
+ap0dl grab "anidb:Bocchi the Rock" --range 1 --quality 1080
+ap0dl grab "anidb:Bocchi the Rock" --range 1 --quality ">=720"
+ap0dl grab "reanime:Bocchi the Rock" --range 1 --quality "best[subtitles]/best"
 ```
 
-### fzf set-up
+The quality parser supports `best`, `worst`, exact resolutions (`1080`, `720p`),
+comparators (`>=720`, `<=1080`), audio/attribute filters (`sub`, `dub`,
+`subtitles`, `[server=HD-1]`, `[title=r"^\[Dub\]"]`), and slash fallbacks.
+The old `best[subtitles]/best` ordering is still available when subtitle
+presence matters more than resolution.
 
-You can force the project search prompts to use [`fzf`](https://github.com/junegunn/fzf).
+### Provider notes
 
-This is an incredibly powerful tool and can enchance the user experience by a lot. For obvious reasons, you need to have it installed and on PATH (can be configured to use an executable path as well).
+- **Re:Anime** resolves `/api/v1/search` → `/api/v1/anime/{slug}` →
+  `/api/v1/anime/{slug}/episodes` → `/api/flix/{anilistId}/{ep}`. The Flixcloud
+  embed is decrypted through `enc-dec.app`, then served through a local proxy
+  that rewrites playlists/keys/segments and strips fake image headers. This is
+  what keeps 1080p HLS playable in normal players and in the downloader.
+- **AnimeGG** parses the HTML search/series pages and inline `videoSources`
+  JSON on the embed page. Streams are direct MP4s with `Referer` headers.
+- **AniDB / Anila** uses the public JSON API for posts/episodes and the play API
+  for server iframes. Iframe links are HLS masters with 1080p/720p/360p
+  variants; each variant is exposed separately.
+- **KissKH** uses the public `DramaList` JSON endpoints and the same public
+  Apps Script key services as the Aniyomi extension. Episode keys are fetched
+  per episode and used to obtain the CDN HLS URL. Encrypted `.txt` subtitles are
+  intentionally skipped rather than passed to a player as unreadable files.
 
-```yml
-fzf:
-    executable: fzf
-    opts: []
-    state: true
+## Legacy providers (explicitly deprecated)
+
+These are not registered in the engine because no live stream path was usable
+from this sandbox. Observed evidence is recorded in
+[`docs/legacy-providers.md`](docs/legacy-providers.md) and is available from the
+CLI:
+
+```sh
+ap0dl providers --legacy
 ```
 
-Users can benefit by using `fzf` and `ap0dl stream twist:` as this allows them to browse the **entire** Twist library with a heavenly interface.
+| ID | Provider | Status | Observation |
+|---|---|---|---|
+| `animepahe` | AnimePahe | deprecated | Cloudflare 403 (`animepahe.pw`); challenge shell on `animepahe.su` |
+| `gogoanime` | Gogoanime / Anitaku | deprecated | `gogoanime.bid` redirected to an HTTP 401 endpoint; `anitaku.pe` is parked |
+| `allanime` | AllAnime | deprecated | API returns Cloudflare 403; earlier source query returned `AA_CRYPTO_MISSING` |
+| `aniwave` | AniWave / 9anime | deprecated | redirects to parked `ww38.aniwave.to`, no watch/search links |
 
-<p align="center">
-<img src="https://i.imgur.com/50Rg1hX.png"></p>
+Repairing any of these requires a new live endpoint and a fresh end-to-end
+smoke test before it is moved into the working provider registry.
 
-The above screenshot has `fzf`'s user theme configured.
+## Configuration
 
-### Schedule set-up
+The Rust engine reads TOML, not the old YAML layout. It searches, in order:
 
-The project can be used to view the schedule of the upcoming anime for the week with the user cherished time and date formats.
+1. `AP0DL_CONFIG` if set;
+2. `./ap0dl.toml`;
+3. `~/.config/ap0dl/config.toml`;
+4. `~/.ap0dl/config.toml`.
 
-```yml
-schedule:
-    site_url: https://graphql.anilist.co/ # DO NOT CHANGE UNLESS YOU KNOW WHAT YOU'RE DOING
-    date_format: "%b. %d, %A"
-    time_format: "%X"
+Generate a sample and inspect the resolved config:
+
+```sh
+ap0dl config --sample > ap0dl.toml
+ap0dl config --path
 ```
 
-Please refer to [Python `datetime.strftime` documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior) for the available formats.
+Important defaults:
 
-## Contributing to the project
+```toml
+default_provider = "reanime"
+quality = "best"
+download_dir = "."
+player = "mpv"
+ffmpeg = "ffmpeg"
+request_delay_ms = 250
+timeout_secs = 30
+```
 
-It is **not** recommended for any average Python developers to engage with the project codebase as the mechanisms used are extremely high level and requires greater understanding of the codebase and Python in general.
+Provider endpoints can be overridden in `[providers.*]`, and common settings
+have environment variables:
 
-If you wish to, you can contribute to the project by submitting a pull request.
+| Variable | Purpose |
+|---|---|
+| `AP0DL_CONFIG` | config file path |
+| `AP0DL_DEFAULT_PROVIDER` | provider used when no prefix is given |
+| `AP0DL_QUALITY` | default quality selector |
+| `AP0DL_DOWNLOAD_DIR` | download root |
+| `AP0DL_PLAYER`, `AP0DL_FFMPEG` | player/remuxer binaries |
+| `AP0DL_REQUEST_DELAY_MS` | shared request delay |
+| `AP0DL_REANIME_BASE`, `AP0DL_ANIMEGG_BASE`, `AP0DL_ANIDB_BASE`, `AP0DL_ANIDB_PLAY`, `AP0DL_KISSKH_BASE` | provider endpoints |
 
-The best way to contribute would be to suggest the developer a provider or a feature, more better if you can show a logic of how that can be done, you'll be mentioned and thanked!
+`request_delay_ms` is a reliability setting for shared CDNs; it is not a
+completion constraint.
 
-## Project disclaimer
+## Downloads
 
-The disclaimer of the project can be found [here](./disclaimer.md).
+`download` handles both direct MP4 and HLS streams:
 
-## In a nutshell
+- HLS master/media playlists, AES-128 segments (including the default IV
+  derivation), fake PNG/WebP headers, and Flixcloud XOR-masked segments;
+- direct MP4 downloads with resume/`Range` retry when CDNs reset connections;
+- optional subtitle files and ffmpeg remuxing. If ffmpeg is unavailable, HLS
+  downloads are written as playable MPEG-TS (`.ts`) files.
 
-- Abuses the developer's braincells in scraping to give about the fastest and most efficient toolset.
-- Brings about a highly powerful codebase which is just about appropriate for scraping.
-- Does not use any heavy dependencies by default.
-- Does not use `selenium` **or** JavaScript evaluators for scraping.
-- Integrates powerful internal tools such as a HLS downloader.
-- Is maintained, **heavily** as far as possible.
+Use `--no-merge` to keep the raw `.ts` output and skip remux/subtitle merging.
+The download root is the current directory unless `-d/--dir` or
+`download_dir` is configured.
 
-## Code redistribution
+Verified live examples from this workspace:
 
-Feel free to do so and take references from the codebase. You need not give credit to the project.
+- Re:Anime HLS download: `/tmp/ap0dl-dl/Bocchi the Rock!/E01.ts`,
+  324,500,784 bytes, MPEG-TS sync every 188 bytes.
+- AnimeGG direct MP4: `/tmp/ap0dl-mp4/One Piece/E01.mp4`, 65,537,496 bytes,
+  starts with `ftypisom`.
+- AniDB 360p HLS: `/tmp/ap0dl-anidb/Bocchi the Rock!/E01.ts`, 45,170,008 bytes,
+  MPEG-TS sync every 188 bytes.
 
-## From the author
+## Architecture
 
-I just maintain this project for my gratification. I'd love to hear from you about your projects and problems (even unrelated to the project), so feel free to contact [me](https://github.com/rares9301).
+```text
+crates/ap0dl-core
+  config, http, models, provider trait/registry, engine
+  providers/{reanime,animegg,anidb,kisskh}
+  download/{mod,hls}, proxy, quality, ranges, player, aniskip
+crates/ap0dl-cli
+  search, episodes, grab, stream, download, providers, config
+```
 
-I'm glad you're here!
+The provider trait is async and receives the shared `Http` client, so retries,
+cookies, cache and request pacing are uniform. Streams carry quality, audio,
+server, subtitle, header, HLS/direct kind, and optional Flixcloud metadata.
 
-## Honourable mentions
+## Verification
 
-### Similar Projects
+The ordered implementation checklist is kept in
+[`docs/goal-checklist.md`](docs/goal-checklist.md), mirrored to
+`/root/goals/ap0dl-rust-rewrite.md`.
 
-- Shell
-  - [ani-cli](https://github.com/pystardust/ani-cli)
-  - [animdl](https://github.com/justfoolingaround/animdl)
-- Kotlin
-  - [Cloudstream-3](https://github.com/Lagradost/cloudstream-3)
-  - [Saikou](https://github.com/saikou-app/saikou)
+```sh
+cargo build --workspace
+cargo test --workspace
+```
 
-These are actively maintained projects, each of which has its own unique features and functionality.
+The test suite covers quality selection (including the 1080p preference), episode
+ranges, HLS playlist/AES parsing, fake-header/XOR stripping, proxy URL
+classification, and provider parsers. Live smoke tests are manual because they
+depend on external sites; see the provider table above and the commands in
+[`docs/legacy-providers.md`](docs/legacy-providers.md).
 
-### Internal Dependencies
+## Migration from Python
 
-- Core
-  - [encode/httpx](https://github.com/encode/httpx)
-  - [Legrandin/pycryptodome](https://github.com/Legrandin/pycryptodome)
-  - [pallets/click](https://github.com/pallets/click)
-  - [tqdm/tqdm](https://github.com/tqdm/tqdm)
-  - [lxml/lxml](https://github.com/lxml/lxml)
-- Optional
-  - [junegunn/fzf](https://github.com/junegunn/fzf)
-  - [qwertyquerty/pypresence](https://github.com/qwertyquerty/pypresence)
+The original Python code is intentionally still present and is not deleted by
+the Rust migration. To use the old engine, keep using `runner.py`/the Python
+package. To use the new engine, run the Rust binary. The configuration formats
+differ (TOML vs YAML); start from `ap0dl config --sample` and port only the
+providers/settings you need. The Rust engine does not read the legacy
+`ap0dl_config.yml`.
 
-The project would definitely not be complete or even in a working state if it weren't for these dependencies.
+Once the Rust binary is installed and your workflows are verified, the Python
+package can be kept as a compatibility surface or removed in a separate,
+explicit change.
 
-## Sponsoring the project
+## Scope note
 
-Usually sponsors means funding which consequently means money but for the project, it means stars. Feel free to star the project if you think it is worthy of one. Moreover, you can just talk, banter and argue with the developer as that way you'll be paying with your time.
-
-<p align="center">
-<sup>You are an absolute legend, keep being awesome!</sup>
-</p>
+This is a sandboxed research/porting effort against public sites. Endpoint
+availability, Cloudflare rules and CDN behavior change frequently; a provider
+is only considered working after the live smoke tests above. The deprecated
+providers are documented rather than silently faked.

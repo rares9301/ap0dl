@@ -1,0 +1,112 @@
+{
+  "captured_at": "2026-10-21T06:38Z",
+  "engine": "ap0dl Rust binary (cargo build --workspace)",
+  "providers": {
+    "reanime": {
+      "query": "reanime:Bocchi the Rock",
+      "search_titles": [
+        "BOCCHI THE ROCK!",
+        "Bocchi the Rock! 2nd Season",
+        "BOCCHI THE ROCK! Recap Part 1"
+      ],
+      "selected_title": "Bocchi the Rock!",
+      "episode_count": 12,
+      "streams": [
+        {
+          "quality": 1080,
+          "title": "[Sub] HD-1",
+          "kind": "hls",
+          "url": "[redacted]"
+        },
+        {
+          "quality": 1080,
+          "title": "[Sub] HD-2",
+          "kind": "hls",
+          "url": "[redacted]"
+        }
+      ]
+    },
+    "animegg": {
+      "query": "animegg:Frieren",
+      "search_titles": [
+        "Frieren beyond journeys end season 2",
+        "Sousou no Frieren",
+        "Sousou no Frieren: ●● no Mahou"
+      ],
+      "selected_title": "Frieren beyond journeys end season 2",
+      "episode_count": 10,
+      "streams": [
+        {
+          "quality": 1080,
+          "title": "[Dub] AnimeGG 1080p",
+          "kind": "direct",
+          "url": "https://www.animegg.org/play/535984/video.mp4?for=101792553920290"
+        }
+      ]
+    },
+    "anidb": {
+      "query": "anidb:Bocchi the Rock",
+      "search_titles": [
+        "Bocchi the Rock!"
+      ],
+      "selected_title": "Bocchi the Rock!",
+      "episode_count": 12,
+      "streams": [
+        {
+          "quality": 1080,
+          "title": "[Sub] SUB Server #1 1080p",
+          "kind": "hls",
+          "url": "https://b1.xlsbox.com/FPIdYkXg99QOUwOxEwP0qSyEqC0BuQ9kR6wBxTcy7YD4KrHRh3YT3HQnnhFjzyxZ/index-f1-v1-a1.m3u8"
+        }
+      ]
+    },
+    "kisskh": {
+      "query": "kisskh:Bocchi the Rock",
+      "search_titles": [
+        "Bocchi the Rock!",
+        "Camp Rock",
+        "Rock It, Mom"
+      ],
+      "selected_title": "Bocchi the Rock!",
+      "episode_count": 12,
+      "streams": [
+        {
+          "quality": 720,
+          "title": "KissKH 720p",
+          "kind": "hls",
+          "url": "https://hls10.cdnvideo11.shop/hls10/135640498e8c6ad7bc4f5cec683bd247/ep.1.1709038573.m3u8"
+        }
+      ]
+    }
+  },
+  "legacy": [
+    {
+      "id": "animepahe",
+      "name": "AnimePahe",
+      "status": "deprecated",
+      "observed": "2026-10-21",
+      "evidence": "GET https://animepahe.pw/ -> HTTP 403, 5,102 bytes, title \"Just a moment...\" (Cloudflare). GET https://animepahe.su/ -> HTTP 200, 6,990-byte challenge shell with no usable API JSON."
+    },
+    {
+      "id": "gogoanime",
+      "name": "Gogoanime / Anitaku",
+      "status": "deprecated",
+      "observed": "2026-10-21",
+      "evidence": "GET https://gogoanime.bid/ -> redirect to http://ww547.gogoanime.bid/?tkn=... then HTTP 401, 9 bytes. GET https://anitaku.pe/search.html?keyword=Bocchi -> HTTP 200 but a 27,666-byte parked \"abovedomains\" for-sale page, not results."
+    },
+    {
+      "id": "allanime",
+      "name": "AllAnime",
+      "status": "deprecated",
+      "observed": "2026-10-21",
+      "evidence": "GET https://api.allanime.day/api with a shows search query -> HTTP 403, 7,231-byte Cloudflare \"Just a moment...\" page. The previous source query had already returned AA_CRYPTO_MISSING."
+    },
+    {
+      "id": "aniwave",
+      "name": "AniWave / 9anime",
+      "status": "deprecated",
+      "observed": "2026-10-21",
+      "evidence": "GET https://aniwave.to/ -> HTTP 200 after redirect to https://ww38.aniwave.to/, 44,059 bytes, title \"aniwave.to\", no watch/search links (parked domain)."
+    }
+  ]
+}

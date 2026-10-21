@@ -1,0 +1,126 @@
+{
+  "anime": {
+    "cover": "https://cdn.xlsbox.com/poster/small/1791258948/729.jpg",
+    "description": "Yearning to make friends and perform live with a band, lonely and socially anxious Hitori \"Bocchi\" Gotou devotes her time to playing the guitar. On a fateful day, Bocchi meets the outgoing drummer Nijika Ijichi, who invites her to join Kessoku Band when their guitarist, Ikuyo Kita, flees before their first show. Soon after, Bocchi meets her final bandmate—the cool bassist Ryou Yamada. Although their first performance together is subpar, the girls feel empowered by their shared love for music, and they are soon rejoined by Kita. Finding happiness in performing, Bocchi and her bandmates put their hearts into improving as musicians while making the most of their fleeting high school days.",
+    "format": "TV",
+    "genres": [
+      "Comedy"
+    ],
+    "id": "1000000729",
+    "provider": "anidb",
+    "status": "Finished Airing",
+    "title": "Bocchi the Rock!",
+    "url": "https://anilab.so/anime/1000000729",
+    "year": 2022
+  },
+  "episodes": [
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43600",
+      "number": 1.0,
+      "recap": false,
+      "title": "Episode 1",
+      "url": "https://anilab.so/watch/43600"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43601",
+      "number": 2.0,
+      "recap": false,
+      "title": "Episode 2",
+      "url": "https://anilab.so/watch/43601"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43602",
+      "number": 3.0,
+      "recap": false,
+      "title": "Episode 3",
+      "url": "https://anilab.so/watch/43602"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43603",
+      "number": 4.0,
+      "recap": false,
+      "title": "Episode 4",
+      "url": "https://anilab.so/watch/43603"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43604",
+      "number": 5.0,
+      "recap": false,
+      "title": "Episode 5",
+      "url": "https://anilab.so/watch/43604"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43605",
+      "number": 6.0,
+      "recap": false,
+      "title": "Episode 6",
+      "url": "https://anilab.so/watch/43605"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43606",
+      "number": 7.0,
+      "recap": false,
+      "title": "Episode 7",
+      "url": "https://anilab.so/watch/43606"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43607",
+      "number": 8.0,
+      "recap": false,
+      "title": "Episode 8",
+      "url": "https://anilab.so/watch/43607"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43608",
+      "number": 9.0,
+      "recap": false,
+      "title": "Episode 9",
+      "url": "https://anilab.so/watch/43608"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43609",
+      "number": 10.0,
+      "recap": false,
+      "title": "Episode 10",
+      "url": "https://anilab.so/watch/43609"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43610",
+      "number": 11.0,
+      "recap": false,
+      "title": "Episode 11",
+      "url": "https://anilab.so/watch/43610"
+    },
+    {
+      "audio": "both",
+      "filler": false,
+      "id": "43611",
+      "number": 12.0,
+      "recap": false,
+      "title": "Episode 12",
+      "url": "https://anilab.so/watch/43611"
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "anime": "Bocchi the Rock!",
+  "episode": 1.0,
+  "provider": "reanime",
+  "streams": [
+    {
+      "audio": "sub",
+      "chapters": [
+        {
+          "end": 264.0,
+          "start": 174.0,
+          "title": "OP"
+        },
+        {
+          "end": 1414.0,
+          "start": 1324.0,
+          "title": "ED"
+        }
+      ],
+      "flix": {
+        "master_url": "[redacted]",
+        "referer": "https://flixcloud.cc/",
+        "w_payload": "AGFzbQEAAAABEQNgAX8AYAV/f39/fwBgAAF/AwQDAAECBQMBAAEGBgF/AUEACwcZBAZtZW1vcnkCAAJfcwAAAl9yAAECX2MAAgrLAQMGACAAJAALgwEBA39BACEFA0ACQCAFIARPDQAgACAFai0AACABIAVqLQAAcyACIAVqLQAAcyEGIAZBjwFqQf8BcSEGIAZBA2tB/wFxIQYgBkE/akH/AXEhBiAGQd4AcyEGIAVBDWwjAGpB/wFxIQcgBiAHcyEGIAMgBWogBjoAACAFQQFqIQUMAQsLCz0BAX9BACEAA0ACQCAAQSBPDQBBkBAgAGpB0A8gAGotAABB8A8gAGotAABzOgAAIABBAWohAAwBCwtBkBALC0cBAEHQDwtA5Rz1d/Bn1A71gAFuRJrUg7IICGNFaOt8zs+MC5s39OwFbkXnF4ZSxUheEyxkLJwpTrs9gkat2cN0ks19qN8Qcg==",
+        "xor_mask": [
+          157,
+          42,
+          241,
+          71,
+          179,
+          142,
+          92,
+          112,
+          166,
+          25,
+          228,
+          59,
+          216,
+          98,
+          15,
+          197
+        ]
+      },
+      "headers": "[redacted]",
+      "kind": "hls",
+      "quality": 1080,
+      "server": "HD-1",
+      "subtitles": [
+        {
+          "default": true,
+          "format": "ass",
+          "lang": "English (neohevc)",
+          "url": "https://vault-90.rundowncdn.top/subtitles/3268d51b-b966-4cce-b60d-1f9039b2890f/eng_2.ass"
+        }
+      ],
+      "title": "[Sub] HD-1",
+      "url": "[redacted]"
+    },
+    {
+      "audio": "sub",
+      "chapters": [
+        {
+          "end": 264.0,
+          "start": 174.0,
+          "title": "OP"
+        },
+        {
+          "end": 1414.0,
+          "start": 1324.0,
+          "title": "ED"
+        }
+      ],
+      "flix": {
+        "master_url": "[redacted]",
+        "referer": "https://flixcloud.cc/",
+        "w_payload": "AGFzbQEAAAABEQNgAX8AYAV/f39/fwBgAAF/AwQDAAECBQMBAAEGBgF/AUEACwcZBAZtZW1vcnkCAAJfcwAAAl9yAAECX2MAAgrgAQMGACAAJAALmAEBA39BACEFA0ACQCAFIARPDQAgACAFai0AACABIAVqLQAAcyACIAVqLQAAcyEGIAZBBXRB/wFxIAZBA3ZyIQYgBkEFdEH/AXEgBkEDdnIhBiAGQStrQf8BcSEGIAZBAnRB/wFxIAZBBnZyIQYgBUHOAGwjAGpB/wFxIQcgBiAHcyEGIAMgBWogBjoAACAFQQFqIQUMAQsLCz0BAX9BACEAA0ACQCAAQSBPDQBBkBAgAGpB0A8gAGotAABB8A8gAGotAABzOgAAIABBAWohAAwBCwtBkBALC0cBAEHQDwtAT/nVmqlAomjGFWvKQJE33meyP9jDlrA8G48tYp1Rv1evi2UKTqEko3vLeYhgJ390mwEKOcBTgoOh0mwUrrlbyQ==",
+        "xor_mask": [
+          157,
+          42,
+          241,
+          71,
+          179,
+          142,
+          92,
+          112,
+          166,
+          25,
+          228,
+          59,
+          216,
+          98,
+          15,
+          197
+        ]
+      },
+      "headers": "[redacted]",
+      "kind": "hls",
+      "quality": 1080,
+      "server": "HD-2",
+      "subtitles": [
+        {
+          "default": true,
+          "format": "ass",
+          "lang": "English (neohevc)",
+          "url": "https://vault-90.spectralcdn.top/subtitles/3268d51b-b966-4cce-b60d-1f9039b2890f/eng_2.ass"
+        }
+      ],
+      "title": "[Sub] HD-2",
+      "url": "[redacted]"
+    }
+  ],
+  "title": "Episode 1"
+}

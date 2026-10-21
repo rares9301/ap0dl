@@ -1,0 +1,1 @@
+{"provider": "animegg", "search_results": 3, "selected_title": "Frieren beyond journeys end season 2", "episode_count": 10, "streams": [{"quality": 1080, "kind": "direct", "title": "[Dub] AnimeGG 1080p"}], "required_stream": {"quality": 1080, "kind": "direct"}}

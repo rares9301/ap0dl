@@ -1,0 +1,1 @@
+{"provider": "reanime", "search_results": 3, "selected_title": "Bocchi the Rock!", "episode_count": 12, "streams": [{"quality": 1080, "kind": "hls", "title": "[Sub] HD-1"}, {"quality": 1080, "kind": "hls", "title": "[Sub] HD-2"}], "required_stream": {"quality": 1080, "kind": "hls"}}

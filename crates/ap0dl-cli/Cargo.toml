@@ -1,0 +1,25 @@
+[package]
+name = "ap0dl-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Command-line interface for the ap0dl Rust engine"
+
+[[bin]]
+name = "ap0dl"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+ap0dl-core = { path = "../ap0dl-core" }
+clap.workspace = true
+futures.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+url.workspace = true
+which.workspace = true
