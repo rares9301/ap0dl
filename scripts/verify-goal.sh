@@ -9,6 +9,7 @@ cargo build --workspace
 cargo test --workspace
 
 ./scripts/verify-quality.sh
+./scripts/verify-selection.sh
 ./scripts/verify-claims.sh
 ./scripts/verify-legacy.sh
 ./scripts/verify-cli.sh

@@ -67,14 +67,19 @@ pub enum Command {
     },
 
     /// Resolve a stream and launch a media player.
+    ///
+    /// With no --index/--range, opens fuzzy search and episode pickers.
     Stream {
-        query: String,
+        /// Anime title. Omit to be prompted interactively.
+        query: Option<String>,
         #[arg(long)]
         provider: Option<String>,
-        #[arg(long, default_value_t = 1)]
-        index: usize,
-        #[arg(short = 'r', long, default_value = ":")]
-        range: String,
+        /// Skip the anime picker and choose this one-based result.
+        #[arg(long)]
+        index: Option<usize>,
+        /// Episode range (for example 1, 1-3, :). Omit for an episode picker.
+        #[arg(short = 'r', long)]
+        range: Option<String>,
         #[arg(short = 'q', long)]
         quality: Option<String>,
         #[arg(short = 'p', long)]
@@ -86,6 +91,9 @@ pub enum Command {
         /// Print the resolved URL instead of playing it.
         #[arg(long)]
         print_url: bool,
+        /// Disable the interactive picker and use the best automatic match.
+        #[arg(long)]
+        no_interactive: bool,
     },
 
     /// Download episodes to disk.
@@ -198,18 +206,20 @@ async fn main() -> anyhow::Result<()> {
             player_args,
             include_fillers,
             print_url,
+            no_interactive,
         } => {
             commands::stream::run(
                 config,
-                &query,
+                query.as_deref(),
                 provider.as_deref(),
                 index,
-                &range,
+                range.as_deref(),
                 quality.as_deref(),
                 player.as_deref(),
                 player_args,
                 include_fillers,
                 print_url,
+                no_interactive,
             )
             .await?
         }

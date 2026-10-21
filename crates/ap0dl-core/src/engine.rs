@@ -1,4 +1,8 @@
+use std::cmp::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
+
+use futures::future::join_all;
 
 use crate::config::Config;
 use crate::error::{Error, Result};
@@ -88,44 +92,68 @@ impl Engine {
             return Ok(limit_results(provider, results, limit));
         }
 
-        let default = self
-            .get(&self.config.default_provider)
-            .or_else(|| self.providers.first().cloned())
-            .ok_or_else(|| Error::config("no providers are registered"))?;
-
-        let mut collected = Vec::new();
-        match default.search(&self.http, &query, page).await {
-            Ok(mut results) => {
-                rank_results(&query, &mut results);
-                collected.extend(limit_results(default.clone(), results, limit));
-            }
-            Err(error) => {
-                tracing::warn!(provider = default.id(), %error, "default provider search failed");
-            }
+        if self.providers.is_empty() {
+            return Err(Error::config("no providers are registered"));
         }
 
-        if collected.is_empty() {
-            for provider in &self.providers {
-                if provider.id() == default.id() {
-                    continue;
-                }
-                match provider.search(&self.http, &query, page).await {
-                    Ok(mut results) if !results.is_empty() => {
+        // The old default-provider-first flow often returned a loosely related
+        // title (for example PLUTO for "cyberpunk 2") because that provider's
+        // search is fuzzy server-side. Query every provider concurrently and
+        // rank the merged results locally; this is both more accurate and
+        // faster than a serial fallback chain.
+        let per_provider_limit = limit.max(1);
+        let search_timeout = Duration::from_secs(self.config.timeout_secs.clamp(3, 10));
+        let requests = self.providers.iter().cloned().map(|provider| {
+            let http = self.http.clone();
+            let query = query.clone();
+            async move {
+                match tokio::time::timeout(search_timeout, provider.search(&http, &query, page))
+                    .await
+                {
+                    Ok(Ok(mut results)) => {
                         rank_results(&query, &mut results);
-                        collected.extend(limit_results(provider.clone(), results, limit));
-                        break;
+                        Some((provider, results))
                     }
-                    Ok(_) => {}
-                    Err(error) => {
-                        tracing::debug!(provider = provider.id(), %error, "fallback search failed");
+                    Ok(Err(error)) => {
+                        tracing::warn!(provider = provider.id(), %error, "provider search failed");
+                        None
+                    }
+                    Err(_) => {
+                        tracing::warn!(
+                            provider = provider.id(),
+                            seconds = search_timeout.as_secs(),
+                            "provider search timed out"
+                        );
+                        None
                     }
                 }
             }
+        });
+
+        let mut collected: Vec<(Arc<dyn Provider>, SearchResult)> = Vec::new();
+        for (provider, results) in join_all(requests).await.into_iter().flatten() {
+            collected.extend(limit_results(provider, results, per_provider_limit));
         }
 
         if collected.is_empty() {
             return Err(Error::NoResults(query));
         }
+
+        let preferred_provider = self.config.default_provider.clone();
+        collected.sort_by(|(left_provider, left), (right_provider, right)| {
+            fuzzy_score(&query, &right.title)
+                .partial_cmp(&fuzzy_score(&query, &left.title))
+                .unwrap_or(Ordering::Equal)
+                .then_with(|| {
+                    let left_preferred = left_provider.id() == preferred_provider.as_str();
+                    let right_preferred = right_provider.id() == preferred_provider.as_str();
+                    right_preferred.cmp(&left_preferred)
+                })
+                .then_with(|| left.title.len().cmp(&right.title.len()))
+                .then_with(|| left.title.cmp(&right.title))
+                .then_with(|| left_provider.id().cmp(right_provider.id()))
+        });
+        collected.truncate(limit.max(1));
         Ok(collected)
     }
 
@@ -159,6 +187,16 @@ impl Engine {
         let Some((provider, result)) = nth_result(&results, index).cloned() else {
             return Err(Error::NoResults(search_query));
         };
+        self.resolve_result(provider, result).await
+    }
+
+    /// Resolves an already-selected search hit. The interactive picker uses
+    /// this to avoid searching the same providers twice.
+    pub async fn resolve_result(
+        &self,
+        provider: Arc<dyn Provider>,
+        result: SearchResult,
+    ) -> Result<Resolved> {
         let anime = match provider.details(&self.http, &result.url).await {
             Ok(anime) => anime,
             Err(error) => {
@@ -195,31 +233,116 @@ fn nth_result<T>(results: &[T], index: usize) -> Option<&T> {
     }
 }
 
-/// Makes provider result ordering predictable: exact title first, then
-/// prefix matches, then substring matches, then everything else. This is
-/// especially important for sites whose search endpoint returns specials
-/// before the main series.
+/// Makes provider result ordering predictable. Sites frequently return
+/// loosely related series before the requested one, so use token coverage plus
+/// whole-title similarity instead of a simple substring check. This lets
+/// `cyberpunk 2` rank `Cyberpunk: Edgerunners 2` above `PLUTO`.
 fn rank_results(query: &str, results: &mut [SearchResult]) {
-    let needle = query.trim().to_ascii_lowercase();
-    if needle.is_empty() {
+    if query.trim().is_empty() {
         return;
     }
     results.sort_by(|a, b| {
-        let key = |result: &SearchResult| {
-            let title = result.title.to_ascii_lowercase();
-            let rank = if title == needle {
-                0u8
-            } else if title.starts_with(&needle) {
-                1
-            } else if title.contains(&needle) {
-                2
-            } else {
-                3
-            };
-            (rank, title.len(), title)
-        };
-        key(a).cmp(&key(b))
+        fuzzy_score(query, &b.title)
+            .partial_cmp(&fuzzy_score(query, &a.title))
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.title.len().cmp(&b.title.len()))
+            .then_with(|| a.title.cmp(&b.title))
     });
+}
+
+/// Returns a 0..1 match score for a user query against a result title.
+pub fn fuzzy_score(query: &str, title: &str) -> f64 {
+    let query = normalize_title(query);
+    let title = normalize_title(title);
+    if query.is_empty() || title.is_empty() {
+        return 0.0;
+    }
+    if query == title {
+        return 1.0;
+    }
+
+    let query_tokens: Vec<&str> = query.split_whitespace().collect();
+    let title_tokens: Vec<&str> = title.split_whitespace().collect();
+    if query_tokens.is_empty() || title_tokens.is_empty() {
+        return 0.0;
+    }
+
+    let coverage = query_tokens
+        .iter()
+        .map(|query_token| {
+            title_tokens
+                .iter()
+                .map(|title_token| token_score(query_token, title_token))
+                .fold(0.0, f64::max)
+        })
+        .sum::<f64>()
+        / query_tokens.len() as f64;
+
+    let whole = strsim::jaro_winkler(&query, &title);
+    let extra_tokens = title_tokens.len().saturating_sub(query_tokens.len()) as f64;
+    let length_penalty = (extra_tokens * 0.01).min(0.08);
+    let all_tokens_exact = query_tokens.iter().all(|query_token| {
+        title_tokens
+            .iter()
+            .any(|title_token| query_token == title_token)
+    });
+
+    let mut score = coverage * 0.72 + whole * 0.28 - length_penalty;
+    if all_tokens_exact {
+        score += 0.04;
+    }
+    if title.starts_with(&query) {
+        score += 0.02;
+    }
+    score.clamp(0.0, 1.0)
+}
+
+fn token_score(query: &str, title: &str) -> f64 {
+    if query == title {
+        return 1.0;
+    }
+    // Numeric tokens are season/episode numbers, not fuzzy words. This keeps
+    // "2" from matching "2099" or "2025".
+    if query.chars().all(|character| character.is_ascii_digit())
+        || title.chars().all(|character| character.is_ascii_digit())
+    {
+        return 0.0;
+    }
+    if title.starts_with(query) || query.starts_with(title) {
+        return 0.92;
+    }
+    if title.contains(query) || query.contains(title) {
+        return 0.84;
+    }
+    let similarity = strsim::normalized_levenshtein(query, title);
+    if similarity >= 0.8 {
+        0.65 + similarity * 0.25
+    } else {
+        0.0
+    }
+}
+
+fn normalize_title(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut pending_space = false;
+    for character in value.chars() {
+        if character.is_alphanumeric() {
+            if pending_space && !output.is_empty() {
+                output.push(' ');
+            }
+            output.extend(character.to_lowercase());
+            pending_space = false;
+        } else if character == '&' {
+            if !output.is_empty() {
+                output.push(' ');
+            }
+            output.push_str("and");
+            pending_space = true;
+        } else {
+            pending_space = true;
+        }
+    }
+    output.trim().to_string()
 }
 
 fn limit_results(
@@ -303,5 +426,49 @@ mod tests {
         assert_eq!(nth_result(&results, 3), Some(&30));
         assert_eq!(nth_result(&results, 4), Some(&10));
         assert_eq!(nth_result(&results, 0), Some(&10));
+    }
+
+    fn search_result(title: &str) -> SearchResult {
+        SearchResult {
+            id: title.to_string(),
+            title: title.to_string(),
+            url: format!("https://example.test/{title}"),
+            provider: "test".to_string(),
+            cover: None,
+            year: None,
+            format: None,
+            episodes: None,
+        }
+    }
+
+    #[test]
+    fn fuzzy_cyberpunk_season_two_beats_pluto() {
+        let mut results = vec![
+            search_result("PLUTO"),
+            search_result("PSYCHO-PASS 2"),
+            search_result("Cyberpunk: Edgerunners"),
+            search_result("Cyberpunk: Edgerunners 2"),
+        ];
+        rank_results("cyberpunk 2", &mut results);
+        assert_eq!(results[0].title, "Cyberpunk: Edgerunners 2");
+        assert_eq!(results[1].title, "Cyberpunk: Edgerunners");
+        let pluto = results
+            .iter()
+            .position(|result| result.title == "PLUTO")
+            .unwrap();
+        assert!(pluto > 1);
+    }
+
+    #[test]
+    fn fuzzy_numeric_tokens_do_not_match_partial_years() {
+        assert!(fuzzy_score("cyberpunk 2", "Cyberpunk: Edgerunners 2") > 0.9);
+        assert!(fuzzy_score("2", "Demon Lord 2099") < 0.3);
+    }
+
+    #[test]
+    fn fuzzy_exact_and_prefix_titles_rank_first() {
+        assert_eq!(fuzzy_score("BOCCHI THE ROCK!", "Bocchi the Rock!"), 1.0);
+        assert!(fuzzy_score("bocchi", "BOCCHI THE ROCK!") > 0.9);
+        assert!(fuzzy_score("bocchi", "Bocchi the Rock! Recap") > 0.8);
     }
 }

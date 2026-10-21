@@ -14,6 +14,7 @@ path = "src/main.rs"
 anyhow = "1"
 ap0dl-core = { path = "../ap0dl-core" }
 clap.workspace = true
+dialoguer.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

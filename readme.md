@@ -21,19 +21,21 @@ runtime is needed for the Rust binary.
 ## Quick start
 
 ```sh
-# Search the default provider
+# Search all registered providers (or limit to one with --provider)
 ap0dl search "Bocchi the Rock"
-
-# Pick a provider explicitly
 ap0dl search "anidb:Bocchi the Rock"
 ap0dl episodes "anidb:Bocchi the Rock" --json
+
+# Interactive: fuzzy-filter the anime, then the episode, then play
+ap0dl stream "cyberpunk 2"
+
+# Non-interactive / scripted
+ap0dl stream "cyberpunk 2" --index 1 --range 1
+ap0dl stream "reanime:Bocchi the Rock" --range 1 --print-url
 
 # Resolve streams (JSON for external tools)
 ap0dl grab "anidb:Bocchi the Rock" --range 1 --quality 1080
 ap0dl grab "kisskh:Bocchi the Rock" --range 1
-
-# Print one playable URL
-ap0dl stream "reanime:Bocchi the Rock" --range 1 --print-url
 
 # Download
 ap0dl download "animegg:Bocchi the Rock" --range 1-3 -d ./downloads
@@ -42,6 +44,14 @@ ap0dl download "animegg:Bocchi the Rock" --range 1-3 -d ./downloads
 Provider prefixes use `provider:query`. A provider URL can also be passed
 directly (`https://kisskh.co/drama/...`), in which case the engine selects the
 provider by hostname. Search result selection is one-based via `--index`.
+
+Without an explicit provider, search requests run concurrently against every
+registered provider and results are ranked with local fuzzy matching (title
+tokens, season numbers and edit distance). This avoids trusting a site's loose
+server-side search. `default_provider` only breaks ties between equally good
+matches. In an interactive terminal, `stream` opens a `dialoguer` fuzzy picker;
+`--index`/`--range` or `--no-interactive` keeps it scriptable. If `stream` is
+run without a query, it prompts for one.
 
 ## Working providers
 
@@ -142,7 +152,7 @@ have environment variables:
 | Variable | Purpose |
 |---|---|
 | `AP0DL_CONFIG` | config file path |
-| `AP0DL_DEFAULT_PROVIDER` | provider used when no prefix is given |
+| `AP0DL_DEFAULT_PROVIDER` | preferred provider when fuzzy scores tie |
 | `AP0DL_QUALITY` | default quality selector |
 | `AP0DL_DOWNLOAD_DIR` | download root |
 | `AP0DL_PLAYER`, `AP0DL_FFMPEG` | player/remuxer binaries |
@@ -151,6 +161,18 @@ have environment variables:
 
 `request_delay_ms` is a reliability setting for shared CDNs; it is not a
 completion constraint.
+
+## Streaming
+
+`stream` resolves one episode by default; pass `--range` for a range or `:`
+for every episode. In a terminal it uses a fuzzy anime picker and then a fuzzy
+episode picker. Subtitle tracks are downloaded eagerly only for the
+default/English tracks (up to four) to keep startup fast; the player still
+receives every selected track.
+
+On WSL, mpv is launched with `--vo=x11 --hwdec=no` unless `--vo` is supplied,
+avoiding the common `VK_ERROR_INITIALIZATION_FAILED` / `vo_x11_init` failure in
+software/indirect WSLg or X11 setups. Use `--player-arg=--vo=...` to override.
 
 ## Downloads
 

@@ -22,6 +22,7 @@ reqwest.workspace = true
 scraper.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+strsim.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 toml.workspace = true

@@ -29,6 +29,13 @@ pub fn launch(
         command
             .arg("--force-window=yes")
             .arg(format!("--title={title}"));
+        // WSL often exposes a software/indirect X11 display without a usable
+        // Vulkan device. mpv's default gpu-next/Vulkan path then falls back to
+        // X11 and can abort in vo_x11_init. Use the plain X11 output for WSL
+        // unless the caller explicitly chose a video output.
+        if is_wsl() && !extra_args.iter().any(|arg| arg.starts_with("--vo")) {
+            command.arg("--vo=x11").arg("--hwdec=no");
+        }
         if !headers.is_empty() {
             command.arg(format!("--http-header-fields={}", header_fields(headers)));
         }
@@ -89,6 +96,14 @@ fn headers_for_ffmpeg(headers: &BTreeMap<String, String>) -> String {
         .iter()
         .map(|(name, value)| format!("{name}: {value}\r\n"))
         .collect::<String>()
+}
+
+fn is_wsl() -> bool {
+    std::env::var_os("WSL_DISTRO_NAME").is_some()
+        || std::env::var_os("WSL_INTEROP").is_some()
+        || std::fs::read_to_string("/proc/version")
+            .map(|version| version.to_ascii_lowercase().contains("microsoft"))
+            .unwrap_or(false)
 }
 
 pub fn find_player() -> Option<String> {
