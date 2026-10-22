@@ -26,7 +26,8 @@ pacman -S --needed base-devel cmake clang ffmpeg mpv jq
 ```
 
 `ffmpeg` is required for HLS remuxing/subtitle merging, and `mpv` for playback.
-`jq` is only used by the verification scripts.
+`jq` and `script` (util-linux) are used by the verification scripts, including
+the PTY-based TUI checks.
 
 ## Quick start
 
@@ -38,10 +39,12 @@ ap0dl search "anidb:Bocchi the Rock" --json
 # Episode list
 ap0dl episodes "anidb:cyberpunk 2" --json
 
-# Interactive: fuzzy anime picker, then fuzzy episode picker, then play
+# Interactive: fuzzy anime/episode pickers, then play. After the player exits,
+# choose replay, download, next, previous, change quality or another episode.
 ap0dl stream "cyberpunk 2"
 
-# Interactive: the same two pickers, then a real-time download progress bar
+# Interactive: fuzzy anime picker, then a checkbox episode list with
+# "DOWNLOAD ALL EPISODES" and a real-time progress bar
 ap0dl download "cyberpunk 2"
 
 # Scripted / non-TTY use
@@ -61,7 +64,8 @@ provider by hostname. Search result selection is one-based via `--index`.
 Without an explicit provider, searches run concurrently against every registered
 provider and results are ranked locally by title tokens, season numbers and edit
 distance. `default_provider` only breaks ties between equally good matches.
-`stream` and `download` share the exact same fuzzy picker implementation. Pass
+`stream` and `download` share the same fuzzy anime picker; stream uses a fuzzy
+single-episode picker, while download opens a checkbox episode list. Pass
 `--index`/`--range` or `--no-interactive` for scripts and pipes.
 
 ## Working providers
@@ -202,6 +206,21 @@ episode picker. Subtitle tracks are downloaded eagerly only for the
 default/English tracks (up to four); the player still receives every selected
 track.
 
+When the player exits on the normal interactive path (no `--range`), a second
+fuzzy menu appears:
+
+- **Replay this episode**
+- **Download this episode instead** — uses the configured `download_dir` and
+  shows the normal download progress bar
+- **Next** / **Previous** — moves through the provider's episode list
+- **Change quality** — lists the qualities exposed by the current stream, then
+  replays at the chosen one
+- **Pick another episode** — opens the fuzzy episode list again
+- **Quit**
+
+Next/previous and quality changes keep working across episodes. The menu is
+skipped for scripted/non-TTY runs and explicit `--range` playlists.
+
 Provider selection is health-aware. When a provider’s stream endpoint fails,
 times out, or returns no streams, that provider is demoted for ten minutes via
 `/tmp/ap0dl-provider-health`, the same title is searched on the other live
@@ -218,10 +237,13 @@ passed directly to Windows mpv because it cannot read Linux temporary paths.
 
 ## Downloads
 
-`download` uses the same fuzzy anime/episode pickers as `stream`. Without
-`--index`/`--range`, a terminal gets both pickers and a script gets every episode
-for the chosen title. Downloads show a real-time `indicatif` progress bar with
-bytes, speed and ETA (direct files) or segment counts (HLS).
+`download` shares the fuzzy anime picker with `stream`, then opens a checkbox
+episode checklist instead of the single-episode fuzzy picker. Space toggles an
+episode, Enter starts the download, and the first row is
+`DOWNLOAD ALL EPISODES (N)`. Without `--index`/`--range`, a script gets every
+episode for the chosen title, preserving the old non-interactive behaviour.
+Downloads show a real-time `indicatif` progress bar with bytes, speed and ETA
+(direct files) or segment counts (HLS).
 
 The download engine handles:
 
@@ -284,7 +306,7 @@ The ordered implementation checklist is in
 
 ```sh
 cargo build --workspace
-cargo test --workspace           # 56 passed
+cargo test --workspace           # 61 passed
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ./scripts/verify-improvements.sh
@@ -292,8 +314,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 
 `verify-improvements.sh` checks the live AniDB 10-episode list, AnimeParadise and
-AnimeToki 1080p streams, the shared CLI surface, health ordering, automatic
-fallback and the Cloudflare probe. `verify-goal.sh` runs the full local harness
+AnimeToki 1080p streams, the download checklist, the post-playback menu, health
+ordering, automatic fallback and the Cloudflare probe. `verify-goal.sh` runs the
+full local harness
 and all six live provider smokes. The test suite covers quality selection
 (including the 1080p preference), episode ranges, HLS playlist/AES parsing,
 fake-header/XOR stripping, proxy URL handling, Cloudflare challenge detection and

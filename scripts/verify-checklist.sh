@@ -10,7 +10,7 @@ grep -q "Live smoke evidence" docs/goal-checklist.md
 ! grep -Eq '\| \[ \] \||\| \[~\] \|' docs/goal-checklist.md
 
 rows="$(grep -Eo '^\| [0-9]+ \|' docs/goal-checklist.md | grep -Eo '[0-9]+' | tr '\n' ' ')"
-test "$rows" = "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 "
+test "$rows" = "1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 "
 
 for provider in reanime animegg anidb kisskh animeparadise animetoki; do
     evidence="docs/evidence/provider-$provider.txt"
@@ -26,4 +26,4 @@ for name in "Re:Anime" "AnimeGG" "AniDB" "KissKH" "AnimeParadise" "AnimeToki"; d
     grep -q "$name" docs/evidence/live-smoke-2026-10-22.md
 done
 
-echo "PASS: 18 checklist items have started/completed state and final evidence"
+echo "PASS: 21 checklist items have started/completed state and final evidence"

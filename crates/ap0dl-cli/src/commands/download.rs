@@ -7,7 +7,7 @@ use ap0dl_core::download::{DownloadOptions, download_episode};
 use super::fallback::fallback_stream;
 use super::health::{mark_provider_degraded, mark_provider_healthy};
 use super::interactive::{
-    DefaultEpisodes, choose_anime, choose_episodes, is_interactive as terminal_interactive,
+    choose_anime, choose_download_episodes, is_interactive as terminal_interactive,
 };
 use super::{best_stream, engine, episode_label};
 
@@ -34,16 +34,10 @@ pub async fn run(
     let engine = engine(config)?;
     let interactive = terminal_interactive(no_interactive);
     let mut resolved = choose_anime(&engine, query, provider, index, interactive).await?;
-    let episodes = choose_episodes(
-        &engine,
-        &resolved,
-        range,
-        include_fillers,
-        interactive,
-        DefaultEpisodes::All,
-        "download",
-    )
-    .await?;
+    let episodes =
+        choose_download_episodes(&engine, &resolved, range, include_fillers, interactive)
+            .await?
+            .selected;
 
     let options = DownloadOptions {
         ffmpeg,

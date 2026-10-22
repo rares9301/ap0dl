@@ -12,9 +12,10 @@ the Python implementation once Rust parity is proven.
 ## Objective
 
 Deliver a Rust-only ap0dl binary whose providers all pass a live
-search → details → episodes → stream smoke test. `stream` and `download` must
-share a fuzzy anime/episode picker, downloads must show real-time progress and
-produce playable files, AniDB/Anila must expose all available episodes, 1080p
+search → details → episodes → stream smoke test. `stream` and `download` must share a fuzzy anime picker, download must support
+multi-episode checkbox selection (including all), stream must offer a fuzzy
+post-playback menu for replay/download/next/previous/quality, downloads must show
+real-time progress and produce playable files, AniDB/Anila must expose all available episodes, 1080p
 must be preferred when offered, provider selection must be health-aware with
 automatic same-title fallback, and Cloudflare-challenged sites must be handled
 with native Rust TLS impersonation or documented as blocked. The Python package
@@ -35,8 +36,9 @@ must be deleted after the Rust replacement is verified.
 
 A Rust-only workspace builds and tests cleanly, all six registered providers pass
 live smoke tests, AniDB exposes the full Cyberpunk 2 episode list, 1080p is
-selected when available, `stream` and `download` share the fuzzy pickers,
-downloads are playable and show progress, fallback/health ordering is live-tested,
+selected when available, download has a multi-select checklist with an all
+option, stream has the post-playback control menu, downloads are playable and
+show progress, fallback/health ordering is live-tested,
 the Cloudflare probe is wired, the Python tree is gone, and documentation plus
 the ordered checklist are current.
 
@@ -49,7 +51,7 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done.
 | 1 | Recon: live-site probes, Aniyomi/Suzuno behaviour research, provider candidates | [x] | [x] | AniDB web fallback and AnimeParadise/AnimeToki flows identified from live sites and Aniyomi sources |
 | 2 | AniDB / Anila episode coverage: merge API list with anidb.se HTML episodes | [x] | [x] | API returned only E01/E10 for Cyberpunk 2; merged list returns E01–E10 |
 | 3 | AniDB live stream + download verification | [x] | [x] | Cyberpunk 2 E02 downloaded; H.264/AAC 720p, 1653 s, 164,375,734 bytes |
-| 4 | Shared fuzzy anime/episode picker for `stream` and `download` | [x] | [x] | `commands/interactive.rs` backs both; PTY run selected Cyberpunk 2 and episode list |
+| 4 | Shared fuzzy anime picker for `stream` and `download` | [x] | [x] | `commands/interactive.rs` backs both; stream uses fuzzy episode picking, download uses a checkbox list |
 | 5 | Download progress bars and playable output | [x] | [x] | Direct and HLS byte/segment bars with speed/ETA; MP4 and MKV outputs ffprobe-verified |
 | 6 | AnimeParadise provider: search/details/episodes/HLS/1080p/subtitles | [x] | [x] | 10 Cyberpunk episodes; 1080p HLS; downloaded MKV is H.264 1920×1080 + AAC + SubRip |
 | 7 | AnimeToki provider: WordPress catalogue + Worker index + direct 1080p MKV | [x] | [x] | 10 episodes; 1080p HEVC MKV download, 506,827,883 bytes, container hint preserved |
@@ -59,11 +61,14 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done.
 | 11 | Automatic same-title fallback | [x] | [x] | Broken AnimeParadise stream host triggered AniDB fallback and exited 0 |
 | 12 | 1080p preference when source offers it | [x] | [x] | `best` selects highest; Re:Anime/AnimeGG/AniDB/AnimeParadise keep 1080p; AnimeToki direct 1080p |
 | 13 | CLI scriptability with non-TTY stdin | [x] | [x] | `--index`, `--range`, `--no-interactive`, `--print-url`, `--json`; download shares picker but stays scriptable |
-| 14 | Unit tests for quality/ranges/HLS/AES/Cloudflare/provider parsers | [x] | [x] | `cargo test --workspace`: 56 passed, 0 failed |
+| 14 | Unit tests for quality/ranges/HLS/AES/Cloudflare/provider parsers | [x] | [x] | `cargo test --workspace`: 61 passed, 0 failed |
 | 15 | Remove Python implementation after Rust parity | [x] | [x] | Deleted `ap0dl/`, `pyproject.toml`, `poetry.lock`, Python README and Python-only scripts |
 | 16 | Docs/evidence: README, provider matrix, legacy page, live smoke page | [x] | [x] | Rust-only README; `docs/legacy-providers.md`; `docs/evidence/live-smoke-2026-10-22.md` |
 | 17 | Python-free verification harness, including `verify-improvements.sh` | [x] | [x] | All shell checks use `jq`; live TUI/1080/health/fallback/Cloudflare acceptance script added |
-| 18 | Final verification and checklist sync | [x] | [x] | `cargo fmt --check`, clippy `-D warnings`, build, 56 tests, `verify-improvements.sh` and full `verify-goal.sh` pass |
+| 18 | First Rust-only verification and checklist sync | [x] | [x] | `cargo fmt --check`, clippy `-D warnings`, build, 56 tests, `verify-improvements.sh` and full `verify-goal.sh` passed |
+| 19 | Download multi-select episode checklist with download-all row | [x] | [x] | `MultiSelect` checkpoint list; first row is `DOWNLOAD ALL EPISODES (N)`; multiple episodes can be toggled |
+| 20 | Post-playback fuzzy action menu for `stream` | [x] | [x] | Replay, download instead, next, previous, change quality, pick another episode, quit |
+| 21 | TUI verification and final checklist sync | [x] | [x] | PTY runs exercised download-all and multi-select, plus replay/next/previous/quality/download actions; 61 tests pass |
 
 ## Live smoke evidence (2026-10-22)
 
@@ -93,9 +98,18 @@ Provider-specific evidence:
 - **AnimeToki** — direct 1080p URL resolved; downloaded `E01.mkv` is HEVC
   1920×1080 with two AAC tracks and 37 subtitle tracks, 1536.43 s,
   506,827,883 bytes. The `.mkv` extension is preserved by the container hint.
-- **Shared TUI** — PTY run of `ap0dl download --print-url` listed Re:ANIME,
-  AniDB, KissKH, AnimeToki and the other live providers, then the 10 Cyberpunk
-  episodes; selection printed a URL. `stream` uses the same picker module.
+- **Shared TUI** — PTY runs listed Re:ANIME, AniDB, KissKH, AnimeToki and the
+  other live providers. Stream uses the fuzzy single-episode picker; download
+  opens a checkbox list.
+- **Download checklist** — PTY `download 'anidb:cyberpunk 2' --index 1
+  --print-url` displayed `[ ] DOWNLOAD ALL EPISODES (10)` followed by Episode
+  1–10. Toggling the first row and pressing Enter resolved and printed all 10
+  URLs. Individual rows are independently toggleable.
+- **Post-playback menu** — after a fake player exited, the fuzzy menu offered
+  Replay, Download this episode instead, Next/Previous, Change quality, Pick
+  another episode and Quit. Next moved E01→E02, Previous moved back, and
+  Change quality switched 1080p→720p and replayed. Download this episode
+  produced the normal HLS progress bar into `AP0DL_DOWNLOAD_DIR`.
 - **Progress bar** — PTY download showed a live bytes/speed/ETA bar, for example
   `40.08 MiB/156.76 MiB 94.86 MiB/s`.
 - **Health ordering** — writing a fresh `reanime` failure marker made
@@ -124,9 +138,11 @@ Provider-specific evidence:
   responses; verified clean failure on AniHQ’s Turnstile page.
 - 2026-10-22 — Deleted the Python package, Poetry metadata, Python README and
   Python-only verification scripts; converted the harness to `jq`.
-- 2026-10-22 — Rewrote README and evidence pages, added the 18-item checklist and
-  `verify-improvements.sh`; final build, clippy, 56 tests and live acceptance
-  passed.
+- 2026-10-22 — Rewrote README and evidence pages, added the initial checklist and
+  `verify-improvements.sh`; build, clippy, 56 tests and live acceptance passed.
+- 2026-10-22 — Added the download checkbox checklist with a download-all row,
+  plus the post-playback fuzzy menu (replay/download/next/previous/quality).
+  PTY-tested both flows; final suite now has 61 tests.
 
 ## Final verification
 
@@ -146,12 +162,16 @@ Results:
 - `cargo fmt --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
 - `cargo build --workspace`: pass.
-- `cargo test --workspace`: **56 passed, 0 failed**.
+- `cargo test --workspace`: **61 passed, 0 failed**.
 - `verify-improvements.sh`: pass (AniDB 10 episodes, AnimeParadise + AnimeToki
   1080p, shared CLI surface, health ordering, fallback, Cloudflare probe).
 - `verify-goal.sh`: full local + six-provider live acceptance; output captured in
   `docs/evidence/verify-goal-2026-10-22-rust-only.txt`.
-- All 18 checklist items are started/completed above; this file is mirrored to
+- PTY acceptance: download checklist (download-all and independent rows) and
+  stream post-playback menu (replay, download, next, previous, quality); the
+  checklist and next/quit menu paths are also automated in
+  `verify-improvements.sh`.
+- All 21 checklist items are started/completed above; this file is mirrored to
   `/root/goals/ap0dl-rust-rewrite.md`.
 
 ## Notes

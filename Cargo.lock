@@ -125,7 +125,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "ap0dl-cli"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "anyhow",
  "ap0dl-core",
@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "ap0dl-core"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "aes",
  "async-trait",

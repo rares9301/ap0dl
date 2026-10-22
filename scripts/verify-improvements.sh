@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Live acceptance for the 2026-10-22 improvement goal:
-# AniDB episode coverage, shared TUI, 1080p new sources, health-aware
-# selection, automatic fallback, and the native Cloudflare fallback.
+# AniDB episode coverage, download checkbox checklist, post-playback stream
+# controls, 1080p new sources, health-aware selection, automatic fallback and
+# the native Cloudflare fallback.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -40,6 +41,25 @@ echo "== Shared TUI surface =="
 "$bin" download --help | grep -q -- '--range'
 "$bin" download --help | grep -q -- '--print-url'
 
+echo "== Download checklist TUI =="
+printf ' \r' | TERM=xterm-256color timeout 180 script -qec \
+  "$bin download 'anidb:cyberpunk 2' --index 1 --print-url --log warn" /dev/null \
+  >"$tmp/download-tui.txt"
+grep -q 'DOWNLOAD ALL EPISODES' "$tmp/download-tui.txt"
+test "$(grep -c '^https://' "$tmp/download-tui.txt")" -ge 10
+
+echo "== Stream post-playback TUI =="
+fake_player="$tmp/fake-player"
+printf '#!/bin/sh\nexit 0\n' >"$fake_player"
+chmod +x "$fake_player"
+printf '\r\033[B\033[B\r\033[B\033[B\033[B\033[B\033[B\r' | \
+  TERM=xterm-256color timeout 180 script -qec \
+  "$bin stream 'anidb:cyberpunk 2' --index 1 --player '$fake_player' --log warn" /dev/null \
+  >"$tmp/stream-tui.txt"
+grep -q 'Finished Episode 1' "$tmp/stream-tui.txt"
+grep -q 'Next: Episode 2' "$tmp/stream-tui.txt"
+grep -q 'Playing Cyberpunk: Edgerunners 2 - Episode 02' "$tmp/stream-tui.txt"
+
 echo "== Health-aware ordering =="
 mkdir -p "$health"
 date +%s >"$health/reanime"
@@ -70,4 +90,4 @@ echo "== Native Cloudflare/TLS fallback is wired =="
 "$bin" providers --probe 'https://anihq.cc/search/?q=cyberpunk' >"$tmp/cf.txt"
 cat "$tmp/cf.txt"
 
-echo "PASS: AniDB 10 episodes, AnimeParadise + AnimeToki live 1080p, shared TUI, health ordering, fallback, Cloudflare probe"
+echo "PASS: AniDB 10 episodes, AnimeParadise + AnimeToki live 1080p, download checklist, post-playback menu, health ordering, fallback, Cloudflare probe"

@@ -134,16 +134,60 @@ No Selenium, Playwright or JavaScript execution is used. Sites that can be
 satisfied by TLS/JA3/JA4 fingerprinting are expected to pass this path; sites
 behind an interactive Turnstile challenge remain explicitly blocked.
 
+## Download checklist and post-playback menu (2026-10-22 follow-up)
+
+A PTY run of:
+
+```sh
+ap0dl download 'anidb:cyberpunk 2' --index 1 --print-url
+```
+
+displayed the checkbox list:
+
+```text
+Select episodes (space toggles, Enter starts download):
+> [ ] DOWNLOAD ALL EPISODES (10)
+  [ ] Episode 1
+  ...
+  [ ] Episode 10
+```
+
+Toggling the first row and pressing Enter resolved all ten episodes and printed
+their URLs. A second run toggled Episode 1 and Episode 2 individually and
+printed exactly those two URLs. `--range`, `--no-interactive` and `--print-url`
+remain scriptable.
+
+A stream PTY run with a fake player that exits immediately showed the
+post-playback fuzzy menu:
+
+```text
+Finished Episode 1 — what next? (played 1080p)
+> Replay this episode
+  Download this episode instead
+  Next: Episode 2
+  Change quality
+  Pick another episode
+  Quit
+```
+
+- **Next** replayed Episode 2; **Previous** returned to Episode 1.
+- **Change quality** listed 1080p/720p/360p, selected 720p and replayed the
+  episode at 720p.
+- **Download this episode instead** started the normal HLS progress bar and
+  wrote to `AP0DL_DOWNLOAD_DIR`.
+- `Pick another episode` reuses the fuzzy episode list; `Quit` exits cleanly.
+
 ## Automated acceptance
 
 ```sh
 cargo build --workspace
-cargo test --workspace           # 56 passed
+cargo test --workspace           # 61 passed
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ./scripts/verify-improvements.sh
 ```
 
 `verify-improvements.sh` rechecks AniDB's 10-episode list, live 1080p streams
-for AnimeParadise and AnimeToki, the shared CLI surface, health ordering,
-automatic fallback and the Cloudflare probe.
+for AnimeParadise and AnimeToki, the download checkbox checklist (including
+download-all), the stream post-playback menu (next/quit via a fake player),
+health ordering, automatic fallback and the Cloudflare probe.
