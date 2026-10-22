@@ -8,17 +8,10 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
 ./target/debug/ap0dl search 'cyberpunk 2' --json --limit 5 >"$tmp/search.json"
-python3 - "$tmp/search.json" <<'PY'
-import json
-import pathlib
-import sys
-
-items = json.loads(pathlib.Path(sys.argv[1]).read_text())
-assert items, "no search results"
-assert items[0]["title"] == "Cyberpunk: Edgerunners 2", items[0]
-assert any(item["title"] == "Cyberpunk: Edgerunners 2" for item in items)
-assert all(item["title"] != "PLUTO" for item in items[:3])
-PY
+jq -e 'length > 0
+  and .[0].title == "Cyberpunk: Edgerunners 2"
+  and any(.[]; .title == "Cyberpunk: Edgerunners 2")
+  and all(.[:3][]; .title != "PLUTO")' "$tmp/search.json" >/dev/null
 
 ./target/debug/ap0dl stream 'cyberpunk 2' --no-interactive --range 1 --print-url \
     >"$tmp/url.txt"

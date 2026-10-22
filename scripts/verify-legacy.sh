@@ -7,25 +7,14 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 ./target/debug/ap0dl providers --legacy --json >"$tmp"
 
-python3 - "$tmp" <<'PY'
-import json
-import pathlib
-import sys
+jq -e '([.[] | .id] | sort) == ["allanime", "animepahe", "aniwave", "gogoanime"]
+  and all(.[]; .status == "deprecated")
+  and all(.[]; (.observed | length) > 0 and (.evidence | length) > 0)
+  and all(.[]; (.evidence | test("403|401|Cloudflare|parked|abovedomains")))' \
+  "$tmp" >/dev/null
 
-items = json.loads(pathlib.Path(sys.argv[1]).read_text())
-expected = {"animepahe", "gogoanime", "allanime", "aniwave"}
-ids = {item["id"] for item in items}
-assert ids == expected, ids
-for item in items:
-    assert item["status"] == "deprecated", item
-    assert item["observed"], item
-    evidence = item["evidence"]
-    assert evidence, item
-    assert any(token in evidence for token in ("403", "401", "Cloudflare", "parked", "abovedomains")), item
-
-doc = pathlib.Path("docs/legacy-providers.md").read_text()
-for token in ("AnimePahe", "Gogoanime", "AllAnime", "AniWave", "HTTP 403", "HTTP 401"):
-    assert token in doc, token
-PY
+for token in AnimePahe Gogoanime AllAnime AniWave "HTTP 403" "HTTP 401"; do
+    grep -q "$token" docs/legacy-providers.md
+done
 
 echo "PASS: four legacy providers are deprecated with observed HTTP evidence"

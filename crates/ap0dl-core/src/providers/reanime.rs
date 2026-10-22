@@ -237,6 +237,7 @@ impl ReAnime {
 
         Ok(Stream {
             url: master_url.clone(),
+            container: None,
             quality,
             title: Some(title),
             audio,

@@ -1,7 +1,10 @@
 pub mod config;
 pub mod download;
 pub mod episodes;
+pub mod fallback;
 pub mod grab;
+pub mod health;
+pub mod interactive;
 pub mod providers;
 pub mod search;
 pub mod stream;

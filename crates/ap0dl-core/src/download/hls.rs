@@ -134,12 +134,15 @@ pub async fn download_hls(
     let progress = ProgressBar::new(playlist.segments.len() as u64);
     progress.set_style(
         ProgressStyle::with_template(
-            "{spinner:.green} HLS [{bar:36.cyan/blue}] {pos}/{len} segments ({eta})",
+            "{spinner:.green} {msg} [{bar:36.cyan/blue}] {pos}/{len} segments ({eta})",
         )
         .unwrap_or_else(|_| ProgressStyle::default_bar())
         .progress_chars("=>-"),
     );
+    progress.set_message("HLS download");
+    progress.enable_steady_tick(std::time::Duration::from_millis(250));
     progress.set_position(start_index as u64);
+    let mut downloaded_bytes = 0u64;
 
     for (index, segment) in playlist.segments.iter().enumerate().skip(start_index) {
         let data = http.get_bytes(&segment.uri, headers).await?;
@@ -151,6 +154,8 @@ pub async fn download_hls(
         let decoded = decode_segment(&data, key.as_deref(), &iv, &options.xor_mask);
         tokio::io::AsyncWriteExt::write_all(&mut file, &decoded).await?;
         write_index(&index_path, index + 1).await?;
+        downloaded_bytes += decoded.len() as u64;
+        progress.set_message(format!("HLS {}", indicatif::HumanBytes(downloaded_bytes)));
         progress.set_position((index + 1) as u64);
     }
     progress.finish_and_clear();

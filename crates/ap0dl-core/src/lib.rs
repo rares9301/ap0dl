@@ -12,6 +12,7 @@
 //! - [`proxy`] serves decrypted flixcloud playlists and segments locally.
 
 pub mod aniskip;
+pub mod cloudflare;
 pub mod config;
 pub mod download;
 pub mod engine;

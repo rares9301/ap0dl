@@ -47,6 +47,26 @@ with redirects enabled. Byte counts are the body sizes observed on this date.
   search links. The destination is a parked domain.
 - No episode/server extraction was possible.
 
+## Additional sites probed — 2026-10-22
+
+These sites were checked while looking for extra live sources. They are not
+registered because no complete search → details → episodes → stream path was
+available. Cloudflare-challenged responses were retried once with the native
+Rust `wreq` Chrome-137 TLS/HTTP2 impersonation client; JavaScript and Turnstile
+challenges are not bypassed.
+
+- **AniHQ** (`https://anihq.cc/search/?q=cyberpunk`) — normal reqwest request:
+  **HTTP 403**, title `Just a moment...` (Cloudflare). Native TLS fallback:
+  reached the same JavaScript/Turnstile challenge.
+- **Kimoitv** — search redirected to a `/verify/` Turnstile page. Native TLS
+  fallback returned the verification page, not search results.
+- **Anikuro** — origin returned **HTTP 522** (Cloudflare connection timed out)
+  during probing.
+- **HStream** — the search endpoint returned **HTTP 404**; no usable catalogue
+  path was exposed.
+- **AnimeParadise** and **AnimeToki** were probed successfully and are now
+  registered providers; see `docs/evidence/live-smoke-2026-10-22.md`.
+
 ## Repair criteria
 
 A legacy entry may be moved into the registered provider list only after all of
@@ -60,8 +80,3 @@ the following succeed against the live site from the current workspace:
 6. the provider is documented with the smoke-test date.
 
 Until then, the source remains deprecated with the evidence above.
-
-## Historical Python README
-
-The old README is preserved at [`python-readme.md`](python-readme.md) for
-migration/reference. The Python package itself remains in the repository.

@@ -84,12 +84,42 @@ impl Http {
     }
 
     pub async fn get_text(&self, url: &str, headers: &HeaderMap) -> Result<String> {
-        let response = self.get(url, headers).await?;
-        let response = ensure_success(response, url).await?;
-        response.text().await.map_err(|source| Error::Http {
-            url: url.to_string(),
-            source,
-        })
+        match self.get(url, headers).await {
+            Ok(response) => {
+                let response = ensure_success(response, url).await?;
+                let text = response.text().await.map_err(|source| Error::Http {
+                    url: url.to_string(),
+                    source,
+                })?;
+                if crate::cloudflare::is_challenge_body(&text) {
+                    tracing::debug!(%url, "trying native TLS impersonation after a 200 challenge body");
+                    match crate::cloudflare::get_text(url, headers).await {
+                        Ok(text) => Ok(text),
+                        Err(fallback) => Err(Error::provider(
+                            "cloudflare",
+                            format!(
+                                "reqwest returned a challenge body; native TLS fallback: {fallback}"
+                            ),
+                        )),
+                    }
+                } else {
+                    Ok(text)
+                }
+            }
+            Err(error @ Error::HttpStatus { status, .. })
+                if crate::cloudflare::is_challenge_status(status) =>
+            {
+                tracing::debug!(%url, status, "trying native TLS impersonation after Cloudflare challenge");
+                match crate::cloudflare::get_text(url, headers).await {
+                    Ok(text) => Ok(text),
+                    Err(fallback) => Err(Error::provider(
+                        "cloudflare",
+                        format!("{error}; native TLS fallback: {fallback}"),
+                    )),
+                }
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn get_text_cached(
@@ -122,12 +152,28 @@ impl Http {
     }
 
     pub async fn get_bytes(&self, url: &str, headers: &HeaderMap) -> Result<Bytes> {
-        let response = self.get(url, headers).await?;
-        let response = ensure_success(response, url).await?;
-        response.bytes().await.map_err(|source| Error::Http {
-            url: url.to_string(),
-            source,
-        })
+        match self.get(url, headers).await {
+            Ok(response) => {
+                let response = ensure_success(response, url).await?;
+                response.bytes().await.map_err(|source| Error::Http {
+                    url: url.to_string(),
+                    source,
+                })
+            }
+            Err(error @ Error::HttpStatus { status, .. })
+                if crate::cloudflare::is_challenge_status(status) =>
+            {
+                tracing::debug!(%url, status, "trying native TLS impersonation after Cloudflare challenge");
+                match crate::cloudflare::get_bytes(url, headers).await {
+                    Ok(bytes) => Ok(bytes),
+                    Err(fallback) => Err(Error::provider(
+                        "cloudflare",
+                        format!("{error}; native TLS fallback: {fallback}"),
+                    )),
+                }
+            }
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn post_json<B: Serialize, T: DeserializeOwned>(
@@ -145,6 +191,28 @@ impl Http {
             source,
         })?;
         serde_json::from_str(&text).map_err(Error::Json)
+    }
+
+    /// POST with no body. Some SPA file indexes return their JSON only for a
+    /// POST to the folder URL (AnimeToki's Cloudflare Worker index does this).
+    pub async fn post_empty_json<T: DeserializeOwned>(
+        &self,
+        url: &str,
+        headers: &HeaderMap,
+    ) -> Result<T> {
+        let text = self.post_empty_text(url, headers).await?;
+        serde_json::from_str(&text).map_err(Error::Json)
+    }
+
+    pub async fn post_empty_text(&self, url: &str, headers: &HeaderMap) -> Result<String> {
+        let response = self
+            .request_with_retry::<serde_json::Value>(reqwest::Method::POST, url, headers, None)
+            .await?;
+        let response = ensure_success(response, url).await?;
+        response.text().await.map_err(|source| Error::Http {
+            url: url.to_string(),
+            source,
+        })
     }
 
     async fn request_with_retry<B: Serialize>(

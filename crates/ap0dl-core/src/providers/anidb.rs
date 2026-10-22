@@ -3,15 +3,18 @@ use std::collections::{BTreeMap, HashSet};
 use async_trait::async_trait;
 use futures::future::join_all;
 use regex::Regex;
+use scraper::{Html, Selector};
 use serde::Deserialize;
 use url::Url;
 
 use crate::config::AniDBConfig;
+use crate::engine::fuzzy_score;
 use crate::error::{Error, Result};
 use crate::http::{Http, headers};
 use crate::models::{Anime, Audio, Episode, SearchResult, Stream, StreamKind};
 use crate::provider::{Provider, ProviderStatus, host_matches};
 use crate::providers::{infer_quality, parse_hls_variants};
+use crate::util;
 
 /// AniDB / Anila. The public site is a thin front-end over a JSON API; the
 /// API returns posts, episode ids and iframe links, and those links are plain
@@ -20,11 +23,12 @@ pub struct AniDB {
     base: String,
     play: String,
     public: String,
+    web: String,
 }
 
 impl AniDB {
     pub fn new(config: &AniDBConfig) -> Result<Self> {
-        for value in [&config.base_url, &config.play_url] {
+        for value in [&config.base_url, &config.play_url, &config.web_url] {
             Url::parse(value.trim_end_matches('/'))
                 .map_err(|error| Error::Url(value.clone(), error))?;
         }
@@ -32,6 +36,7 @@ impl AniDB {
             base: config.base_url.trim_end_matches('/').to_string(),
             play: config.play_url.trim_end_matches('/').to_string(),
             public: config.public_url.trim_end_matches('/').to_string(),
+            web: config.web_url.trim_end_matches('/').to_string(),
         })
     }
 
@@ -92,6 +97,111 @@ impl AniDB {
         })
     }
 
+    fn web_headers(&self) -> reqwest::header::HeaderMap {
+        let referer = format!("{}/", self.web);
+        headers(&[
+            (
+                "Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            ),
+            ("Referer", referer.as_str()),
+        ])
+    }
+
+    async fn web_series_url(&self, http: &Http, title: &str) -> Option<String> {
+        let search = format!("{}/?s={}", self.web, urlencoding::encode(title));
+        let html = http.get_text(&search, &self.web_headers()).await.ok()?;
+        let document = Html::parse_document(&html);
+        let selector = Selector::parse("a[href*=\"/anime/\"]").ok()?;
+        let mut best: Option<(f64, String)> = None;
+        for element in document.select(&selector) {
+            let Some(href) = element.value().attr("href") else {
+                continue;
+            };
+            let url = util::absolutize(&self.web, href);
+            if !url.contains("/anime/") {
+                continue;
+            }
+            let text = element.text().collect::<String>();
+            let label = element.value().attr("title").unwrap_or(&text);
+            let score = fuzzy_score(title, label).max(fuzzy_score(title, &text));
+            if score < 0.55 {
+                continue;
+            }
+            if best
+                .as_ref()
+                .is_none_or(|(best_score, _)| score > *best_score)
+            {
+                best = Some((score, url));
+            }
+        }
+        best.map(|(_, url)| url)
+    }
+
+    async fn web_episodes(&self, http: &Http, anime: &Anime) -> Result<Vec<Episode>> {
+        let series_url = self
+            .web_series_url(http, &anime.title)
+            .await
+            .ok_or_else(|| Error::provider(self.id(), "anidb.se series page was not found"))?;
+        let html = http.get_text(&series_url, &self.web_headers()).await?;
+        let links = parse_web_episode_links(&html, &series_url);
+        if links.is_empty() {
+            return Err(Error::provider(
+                self.id(),
+                "anidb.se series page had no episode links",
+            ));
+        }
+        Ok(links
+            .into_iter()
+            .map(|(number, url)| Episode {
+                number,
+                title: Some(format!("Episode {number}")),
+                id: format!("web:{url}"),
+                url,
+                filler: false,
+                recap: false,
+                aired: None,
+                audio: Audio::Sub,
+            })
+            .collect())
+    }
+
+    async fn web_streams(&self, http: &Http, episode: &Episode) -> Result<Vec<Stream>> {
+        let html = http.get_text(&episode.url, &self.web_headers()).await?;
+        let url = parse_web_video_url(&html).ok_or_else(|| {
+            Error::provider(
+                self.id(),
+                format!(
+                    "anidb.se episode page had no playable video: {}",
+                    episode.url
+                ),
+            )
+        })?;
+        let quality = infer_quality(&url).or(Some(720));
+        let mut headers = BTreeMap::new();
+        headers.insert("Referer".to_string(), format!("{}/", self.web));
+        Ok(vec![Stream {
+            url: url.clone(),
+            container: None,
+            quality,
+            title: Some(match quality {
+                Some(quality) => format!("AniDB.se {quality}p"),
+                None => "AniDB.se".to_string(),
+            }),
+            audio: Audio::Sub,
+            server: Some("AniDB.se".to_string()),
+            subtitles: Vec::new(),
+            chapters: Vec::new(),
+            headers,
+            kind: if url.contains(".m3u8") {
+                StreamKind::Hls
+            } else {
+                StreamKind::Direct
+            },
+            flix: None,
+        }])
+    }
+
     async fn master_variants(&self, http: &Http, link: &str) -> Result<Vec<(String, Option<u32>)>> {
         let text = http
             .get_text(
@@ -131,13 +241,14 @@ impl Provider for AniDB {
     }
 
     fn notes(&self) -> &'static str {
-        "JSON API + direct HLS masters; exposes 1080p, 720p and 360p variants."
+        "JSON API + direct HLS masters with an anidb.se HTML fallback for complete episode lists and 720p MP4s."
     }
 
     fn matches(&self, url: &Url) -> bool {
         host_matches(url, "anilab.so")
             || host_matches(url, "anidb.app")
             || host_matches(url, "amdapi.click")
+            || host_matches(url, "anidb.se")
     }
 
     async fn search(&self, http: &Http, query: &str, page: u32) -> Result<Vec<SearchResult>> {
@@ -165,32 +276,72 @@ impl Provider for AniDB {
     async fn episodes(&self, http: &Http, anime: &Anime) -> Result<Vec<Episode>> {
         let id = self.id_from_url(&anime.url)?;
         let url = format!("{}/api/anime/{id}/episodes", self.play);
-        let response: EpisodeList = http
-            .get_json(&url, &self.play_headers())
-            .await
-            .map_err(|error| Error::provider(self.id(), error))?;
-        let mut episodes: Vec<Episode> = response
-            .list
-            .into_iter()
-            .filter_map(|episode| {
-                let number = episode.number.parse::<f32>().ok()?;
-                Some(Episode {
-                    number,
-                    title: episode.name.filter(|name| !name.trim().is_empty()),
-                    id: episode.id.clone(),
-                    url: format!("{}/watch/{}", self.public, episode.id),
-                    filler: episode.filler,
-                    recap: false,
-                    aired: None,
-                    audio: Audio::Both,
+        let response = http
+            .get_json::<EpisodeList>(&url, &self.play_headers())
+            .await;
+        let mut episodes: Vec<Episode> = match response {
+            Ok(response) => response
+                .list
+                .into_iter()
+                .filter_map(|episode| {
+                    let number = episode.number.parse::<f32>().ok()?;
+                    Some(Episode {
+                        number,
+                        title: episode.name.filter(|name| !name.trim().is_empty()),
+                        id: episode.id.clone(),
+                        url: format!("{}/watch/{}", self.public, episode.id),
+                        filler: episode.filler,
+                        recap: false,
+                        aired: None,
+                        audio: Audio::Both,
+                    })
                 })
-            })
-            .collect();
+                .collect(),
+            Err(error) => {
+                tracing::warn!(%error, "anidb JSON episode list failed; trying anidb.se");
+                Vec::new()
+            }
+        };
+
+        // AniDB's JSON endpoint can be stale or incomplete (for example it
+        // currently reports only episodes 1 and 10 for Cyberpunk: Edgerunners
+        // 2). The public anidb.se series page has the full episode list, so
+        // merge missing episodes from that page. API episodes stay first so
+        // their 1080p HLS servers are preferred when available.
+        let incomplete = episodes.is_empty()
+            || episodes.len() <= 3
+            || episodes
+                .windows(2)
+                .any(|pair| pair[1].number - pair[0].number > 1.5);
+        if incomplete {
+            match self.web_episodes(http, anime).await {
+                Ok(web_episodes) => {
+                    for episode in web_episodes {
+                        if !episodes
+                            .iter()
+                            .any(|existing| (existing.number - episode.number).abs() < 0.001)
+                        {
+                            episodes.push(episode);
+                        }
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "anidb.se episode fallback failed");
+                }
+            }
+        }
+
+        if episodes.is_empty() {
+            return Err(Error::provider(self.id(), "AniDB returned no episodes"));
+        }
         episodes.sort_by(|a, b| a.number.total_cmp(&b.number));
         Ok(episodes)
     }
 
     async fn streams(&self, http: &Http, _anime: &Anime, episode: &Episode) -> Result<Vec<Stream>> {
+        if episode.id.starts_with("web:") || episode.url.starts_with(&self.web) {
+            return self.web_streams(http, episode).await;
+        }
         let url = format!("{}/api/episode/{}/servers", self.play, episode.id);
         let response: ServerList = http
             .get_json(&url, &self.play_headers())
@@ -244,6 +395,7 @@ impl Provider for AniDB {
                 };
                 streams.push(Stream {
                     url: variant_url.clone(),
+                    container: None,
                     quality,
                     title: Some(title),
                     audio,
@@ -394,6 +546,81 @@ fn trailing_number(value: &str) -> Option<i64> {
         .and_then(|captures| captures.get(1)?.as_str().parse().ok())
 }
 
+fn parse_web_episode_links(html: &str, series_url: &str) -> Vec<(f32, String)> {
+    let Ok(series) = Url::parse(series_url) else {
+        return Vec::new();
+    };
+    let series_slug = series
+        .path_segments()
+        .and_then(|mut segments| segments.rfind(|segment| !segment.is_empty()))
+        .unwrap_or_default()
+        .to_string();
+    let Ok(selector) = Selector::parse("a[href]") else {
+        return Vec::new();
+    };
+    let Ok(number_regex) = Regex::new(r"(?i)episode[-_ ]?(\d+(?:\.\d+)?)") else {
+        return Vec::new();
+    };
+    let document = Html::parse_document(html);
+    let mut seen = HashSet::new();
+    let mut links = Vec::new();
+    for element in document.select(&selector) {
+        let Some(href) = element.value().attr("href") else {
+            continue;
+        };
+        if !href.to_ascii_lowercase().contains("episode") {
+            continue;
+        }
+        let url = util::absolutize(series_url, href);
+        if !url.contains(&series_slug) {
+            continue;
+        }
+        let text = element.text().collect::<String>();
+        let haystack = format!("{url} {text}");
+        let Some(captures) = number_regex.captures(&haystack) else {
+            continue;
+        };
+        let Some(number) = captures
+            .get(1)
+            .and_then(|value| value.as_str().parse::<f32>().ok())
+        else {
+            continue;
+        };
+        if seen.insert(url.clone()) {
+            links.push((number, url));
+        }
+    }
+    links.sort_by(|left, right| left.0.total_cmp(&right.0));
+    links
+}
+
+fn parse_web_video_url(html: &str) -> Option<String> {
+    let document = Html::parse_document(html);
+    for pattern in ["video[data-src]", "video[src]", "source[src]"] {
+        let Ok(selector) = Selector::parse(pattern) else {
+            continue;
+        };
+        for element in document.select(&selector) {
+            let Some(value) = element
+                .value()
+                .attr("data-src")
+                .or_else(|| element.value().attr("src"))
+            else {
+                continue;
+            };
+            let value = value.trim();
+            if value.starts_with("data:") || value.is_empty() {
+                continue;
+            }
+            let url = util::absolutize("https://anidb.se/", value);
+            if url.contains(".mp4") || url.contains(".m3u8") {
+                return Some(url);
+            }
+        }
+    }
+    None
+}
+
 fn parse_year(value: Option<&str>) -> Option<u32> {
     static YEAR: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
     let regex = YEAR.get_or_init(|| Regex::new(r"(\d{4})").unwrap());
@@ -436,5 +663,38 @@ mod tests {
     fn parses_year() {
         assert_eq!(parse_year(Some("Fall 2022")), Some(2022));
         assert_eq!(parse_year(Some("unknown")), None);
+    }
+
+    #[test]
+    fn parses_anidb_se_episode_links() {
+        let html = r#"
+            <a href="/anime/cyberpunk-edgerunners-2/">Series</a>
+            <a href="/cyberpunk-edgerunners-2-episode-1-english-subbed/">Episode 1</a>
+            <a href="/cyberpunk-edgerunners-2-episode-2-english-subbed/">Episode 2</a>
+            <a href="/cyberpunk-edgerunners-2-episode-10-english-subbed/">Episode 10</a>
+            <a href="/another-show-episode-2-english-subbed/">Another show</a>
+        "#;
+        let links =
+            parse_web_episode_links(html, "https://anidb.se/anime/cyberpunk-edgerunners-2/");
+        assert_eq!(links.len(), 3);
+        assert_eq!(links[0].0, 1.0);
+        assert_eq!(links[1].0, 2.0);
+        assert_eq!(links[2].0, 10.0);
+        assert!(links[1].1.ends_with("episode-2-english-subbed/"));
+    }
+
+    #[test]
+    fn extracts_anidb_se_video() {
+        let html = r#"
+            <div class="player">
+              <video id="uvp-1" class="uvp-player"
+                data-src="https://my.1anime.site/videos/Cyberpunk_Edgerunners_2_Episode_2_1792512060.mp4"
+                data-type="mp4"></video>
+            </div>
+        "#;
+        assert_eq!(
+            parse_web_video_url(html).as_deref(),
+            Some("https://my.1anime.site/videos/Cyberpunk_Edgerunners_2_Episode_2_1792512060.mp4")
+        );
     }
 }

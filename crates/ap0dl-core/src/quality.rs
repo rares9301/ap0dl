@@ -352,6 +352,7 @@ mod tests {
     fn stream(quality: Option<u32>, audio: Audio, title: &str, subs: bool) -> Stream {
         Stream {
             url: format!("https://example.test/{quality:?}.m3u8"),
+            container: None,
             quality,
             title: Some(title.to_string()),
             audio,

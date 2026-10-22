@@ -1,0 +1,1 @@
+{"provider":"animetoki","search_results":2,"selected_title":"Cyberpunk: Edgerunners (Season 1) Dual Audio HEVC [1080p]","episode_count":10,"streams":[{"quality":1080,"kind":"direct","title":"AnimeToki 1080p - [AnimeToki] Cyberpunk - Edgerunners - Episode 1 [1080p]"}],"required_stream":{"quality":1080,"kind":"direct"}}

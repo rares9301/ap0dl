@@ -102,6 +102,11 @@ pub fn absolutize(base: &str, href: &str) -> String {
     if href.starts_with("//") {
         return format!("https:{href}");
     }
+    if let Ok(base) = url::Url::parse(base) {
+        if let Ok(url) = base.join(href) {
+            return url.to_string();
+        }
+    }
     let base = ensure_trailing_slash(base);
     format!("{}{}", base, href.trim_start_matches('/'))
 }

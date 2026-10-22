@@ -49,6 +49,8 @@ pub struct ProvidersConfig {
     pub animegg: AnimeGGConfig,
     pub anidb: AniDBConfig,
     pub kisskh: KissKhConfig,
+    pub animeparadise: AnimeParadiseConfig,
+    pub animetoki: AnimeTokiConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +91,7 @@ pub struct AniDBConfig {
     pub base_url: String,
     pub play_url: String,
     pub public_url: String,
+    pub web_url: String,
 }
 
 impl Default for AniDBConfig {
@@ -97,6 +100,7 @@ impl Default for AniDBConfig {
             base_url: "https://anilab2.amdapi.click".to_string(),
             play_url: "https://play.anidb.app".to_string(),
             public_url: "https://anilab.so".to_string(),
+            web_url: "https://anidb.se".to_string(),
         }
     }
 }
@@ -115,6 +119,42 @@ impl Default for KissKhConfig {
             base_url: "https://kisskh.co".to_string(),
             video_key_url: "https://script.google.com/macros/s/AKfycbzn8B31PuDxzaMa9_CQ0VGEDasFqfzI5bXvjaIZH4DM8DNq9q6xj1ALvZNz_JT3jF0suA/exec?id=".to_string(),
             subtitle_key_url: "https://script.google.com/macros/s/AKfycbyq6hTj0ZhlinYC6xbggtgo166tp6XaDKBCGtnYk8uOfYBUFwwxBui0sGXiu_zIFmA/exec?id=".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AnimeParadiseConfig {
+    pub base_url: String,
+    pub api_url: String,
+    pub stream_url: String,
+}
+
+impl Default for AnimeParadiseConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "https://www.animeparadise.moe".to_string(),
+            api_url: "https://api.animeparadise.moe".to_string(),
+            stream_url: "https://stream.animeparadise.moe".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AnimeTokiConfig {
+    pub base_url: String,
+    pub cloud_url: String,
+    pub drive_url: String,
+}
+
+impl Default for AnimeTokiConfig {
+    fn default() -> Self {
+        Self {
+            base_url: "https://animetoki.com".to_string(),
+            cloud_url: "https://cloud.animetoki.com".to_string(),
+            drive_url: "https://drive.animetoki.com".to_string(),
         }
     }
 }
@@ -209,8 +249,26 @@ impl Config {
         if let Ok(value) = std::env::var("AP0DL_ANIDB_PLAY") {
             self.providers.anidb.play_url = value;
         }
+        if let Ok(value) = std::env::var("AP0DL_ANIDB_WEB") {
+            self.providers.anidb.web_url = value;
+        }
         if let Ok(value) = std::env::var("AP0DL_KISSKH_BASE") {
             self.providers.kisskh.base_url = value;
+        }
+        if let Ok(value) = std::env::var("AP0DL_ANIMEPARADISE_BASE") {
+            self.providers.animeparadise.base_url = value;
+        }
+        if let Ok(value) = std::env::var("AP0DL_ANIMEPARADISE_API") {
+            self.providers.animeparadise.api_url = value;
+        }
+        if let Ok(value) = std::env::var("AP0DL_ANIMEPARADISE_STREAM") {
+            self.providers.animeparadise.stream_url = value;
+        }
+        if let Ok(value) = std::env::var("AP0DL_ANIMETOKI_BASE") {
+            self.providers.animetoki.base_url = value;
+        }
+        if let Ok(value) = std::env::var("AP0DL_ANIMETOKI_CLOUD") {
+            self.providers.animetoki.cloud_url = value;
         }
     }
 
@@ -232,7 +290,28 @@ impl Config {
             ),
             ("providers.anidb.base_url", &self.providers.anidb.base_url),
             ("providers.anidb.play_url", &self.providers.anidb.play_url),
+            ("providers.anidb.web_url", &self.providers.anidb.web_url),
             ("providers.kisskh.base_url", &self.providers.kisskh.base_url),
+            (
+                "providers.animeparadise.base_url",
+                &self.providers.animeparadise.base_url,
+            ),
+            (
+                "providers.animeparadise.api_url",
+                &self.providers.animeparadise.api_url,
+            ),
+            (
+                "providers.animeparadise.stream_url",
+                &self.providers.animeparadise.stream_url,
+            ),
+            (
+                "providers.animetoki.base_url",
+                &self.providers.animetoki.base_url,
+            ),
+            (
+                "providers.animetoki.cloud_url",
+                &self.providers.animetoki.cloud_url,
+            ),
         ] {
             url::Url::parse(url)
                 .map_err(|error| Error::config(format!("{name} is not a valid URL: {error}")))?;
@@ -267,11 +346,22 @@ base_url = "https://www.animegg.org"
 base_url = "https://anilab2.amdapi.click"
 play_url = "https://play.anidb.app"
 public_url = "https://anilab.so"
+web_url = "https://anidb.se"
 
 [providers.kisskh]
 base_url = "https://kisskh.co"
 video_key_url = "https://script.google.com/macros/s/AKfycbzn8B31PuDxzaMa9_CQ0VGEDasFqfzI5bXvjaIZH4DM8DNq9q6xj1ALvZNz_JT3jF0suA/exec?id="
 subtitle_key_url = "https://script.google.com/macros/s/AKfycbyq6hTj0ZhlinYC6xbggtgo166tp6XaDKBCGtnYk8uOfYBUFwwxBui0sGXiu_zIFmA/exec?id="
+
+[providers.animeparadise]
+base_url = "https://www.animeparadise.moe"
+api_url = "https://api.animeparadise.moe"
+stream_url = "https://stream.animeparadise.moe"
+
+[providers.animetoki]
+base_url = "https://animetoki.com"
+cloud_url = "https://cloud.animetoki.com"
+drive_url = "https://drive.animetoki.com"
 "#
     }
 }

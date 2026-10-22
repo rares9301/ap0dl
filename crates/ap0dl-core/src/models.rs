@@ -169,6 +169,10 @@ pub struct FlixInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stream {
     pub url: String,
+    /// Media container hint when the URL itself does not carry an extension
+    /// (for example AnimeToki's `?a=download&id=...` MKV endpoints).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub container: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub quality: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]

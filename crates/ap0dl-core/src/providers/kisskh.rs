@@ -260,6 +260,7 @@ impl Provider for KissKH {
                 };
                 streams.push(Stream {
                     url,
+                    container: None,
                     quality,
                     title: Some(title),
                     audio,
@@ -277,6 +278,7 @@ impl Provider for KissKH {
 
         Ok(vec![Stream {
             url: video_url.clone(),
+            container: None,
             quality: infer_quality(&video_url),
             title: Some("KissKH".to_string()),
             audio,

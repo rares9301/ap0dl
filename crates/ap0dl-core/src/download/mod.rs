@@ -68,24 +68,38 @@ pub async fn download_stream(
                 hls_options.xor_mask = info.xor_mask.clone();
             }
         }
-        let path = hls::download_hls(http, &url, &headers, destination, &hls_options).await?;
+        let mut path = hls::download_hls(http, &url, &headers, destination, &hls_options).await?;
         let subtitles = if options.merge_subtitles {
             download_subtitles(http, stream, destination, options).await?
         } else {
             Vec::new()
         };
         if options.merge_subtitles && !subtitles.is_empty() {
-            let _ = merge_subtitles(&options.ffmpeg, &path, &subtitles).await;
+            if let Ok(Some(merged)) = merge_subtitles(&options.ffmpeg, &path, &subtitles).await {
+                path = merged;
+            }
         }
         return Ok(Downloaded { path, subtitles });
     }
 
-    let path = download_direct(http, &url, &mut headers, destination).await?;
+    let mut path = download_direct(
+        http,
+        &url,
+        &mut headers,
+        destination,
+        stream.container.as_deref(),
+    )
+    .await?;
     let subtitles = if options.merge_subtitles {
         download_subtitles(http, stream, destination, options).await?
     } else {
         Vec::new()
     };
+    if options.merge_subtitles && !subtitles.is_empty() {
+        if let Ok(Some(merged)) = merge_subtitles(&options.ffmpeg, &path, &subtitles).await {
+            path = merged;
+        }
+    }
     Ok(Downloaded { path, subtitles })
 }
 
@@ -94,20 +108,26 @@ async fn download_direct(
     url: &str,
     headers: &mut HeaderMap,
     destination: &Path,
+    container_hint: Option<&str>,
 ) -> Result<PathBuf> {
     if let Some(parent) = destination.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    let path = destination.with_extension("mp4");
+    let extension = direct_extension(url, container_hint);
+    let path = destination.with_extension(&extension);
     let mut written = tokio::fs::metadata(&path)
         .await
         .map(|metadata| metadata.len())
         .unwrap_or(0);
-    let progress = progress_bar(None, "download");
+    let label = destination
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("download");
+    let progress = progress_bar(None, label);
     progress.set_position(written);
     let mut last_error: Option<Error> = None;
 
-    // Large direct MP4s are frequently interrupted by CDN resets. Keep the
+    // Large direct files are frequently interrupted by CDN resets. Keep the
     // partial file and resume with a Range request instead of restarting.
     for attempt in 0..5 {
         let mut request_headers = headers.clone();
@@ -182,6 +202,34 @@ async fn download_direct(
     Err(last_error.unwrap_or_else(|| Error::download("direct download was interrupted")))
 }
 
+/// Picks the output extension from the provider hint, then the URL, and
+/// finally falls back to MP4. This keeps AnimeToki MKV downloads as `.mkv`.
+fn direct_extension(url: &str, hint: Option<&str>) -> String {
+    if let Some(hint) = hint {
+        let hint = hint.trim().trim_start_matches('.').to_ascii_lowercase();
+        if matches!(
+            hint.as_str(),
+            "mp4" | "mkv" | "webm" | "avi" | "mov" | "m4v"
+        ) {
+            return hint;
+        }
+    }
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let extension = path
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if matches!(
+        extension.as_str(),
+        "mp4" | "mkv" | "webm" | "avi" | "mov" | "m4v"
+    ) {
+        extension
+    } else {
+        "mp4".to_string()
+    }
+}
+
 async fn download_subtitles(
     http: &Http,
     stream: &Stream,
@@ -218,9 +266,13 @@ async fn download_subtitles(
     Ok(paths)
 }
 
-async fn merge_subtitles(ffmpeg: &str, video: &Path, subtitles: &[PathBuf]) -> Result<()> {
+async fn merge_subtitles(
+    ffmpeg: &str,
+    video: &Path,
+    subtitles: &[PathBuf],
+) -> Result<Option<PathBuf>> {
     if subtitles.is_empty() || which::which(ffmpeg).is_err() {
-        return Ok(());
+        return Ok(None);
     }
     let output = video.with_extension("submerged.mkv");
     let mut command = tokio::process::Command::new(ffmpeg);
@@ -237,10 +289,16 @@ async fn merge_subtitles(ffmpeg: &str, video: &Path, subtitles: &[PathBuf]) -> R
         .status()
         .await
         .map_err(|error| Error::download(format!("could not run ffmpeg: {error}")))?;
-    if status.success() {
-        let _ = tokio::fs::rename(&output, video.with_extension("mkv")).await;
+    if !status.success() {
+        let _ = tokio::fs::remove_file(&output).await;
+        return Ok(None);
     }
-    Ok(())
+    let merged = video.with_extension("mkv");
+    tokio::fs::rename(&output, &merged).await?;
+    if video.extension().and_then(|extension| extension.to_str()) != Some("mkv") {
+        let _ = tokio::fs::remove_file(video).await;
+    }
+    Ok(Some(merged))
 }
 
 pub fn header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
@@ -263,12 +321,13 @@ fn progress_bar(total: Option<u64>, label: &str) -> ProgressBar {
     };
     bar.set_style(
         ProgressStyle::with_template(
-            "{spinner:.green} {msg:20} [{bar:32.cyan/blue}] {bytes}/{total_bytes} ({eta})",
+            "{spinner:.green} {msg:22} [{bar:32.cyan/blue}] {bytes}/{total_bytes} {bytes_per_sec} ({eta})",
         )
         .unwrap_or_else(|_| ProgressStyle::default_bar())
         .progress_chars("=>-"),
     );
     bar.set_message(label.to_string());
+    bar.enable_steady_tick(std::time::Duration::from_millis(200));
     bar
 }
 
@@ -282,4 +341,25 @@ pub async fn download_episode(
 ) -> Result<Downloaded> {
     let destination = util::file_stem_for(directory, title, episode);
     download_stream(http, stream, &destination, options).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn picks_container_extension() {
+        assert_eq!(
+            direct_extension("https://example.test/file.mkv?token=1", None),
+            "mkv"
+        );
+        assert_eq!(
+            direct_extension("https://example.test/?a=download&id=1", Some("mkv")),
+            "mkv"
+        );
+        assert_eq!(
+            direct_extension("https://example.test/?a=download&id=1", None),
+            "mp4"
+        );
+    }
 }

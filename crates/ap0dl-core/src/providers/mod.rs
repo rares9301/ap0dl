@@ -1,5 +1,7 @@
 pub mod anidb;
 pub mod animegg;
+pub mod animeparadise;
+pub mod animetoki;
 pub mod kisskh;
 pub mod reanime;
 
@@ -19,6 +21,10 @@ pub fn all(config: &Config) -> Result<Vec<Arc<dyn Provider>>> {
         Arc::new(animegg::AnimeGG::new(&config.providers.animegg)?),
         Arc::new(anidb::AniDB::new(&config.providers.anidb)?),
         Arc::new(kisskh::KissKH::new(&config.providers.kisskh)?),
+        Arc::new(animeparadise::AnimeParadise::new(
+            &config.providers.animeparadise,
+        )?),
+        Arc::new(animetoki::AnimeToki::new(&config.providers.animetoki)?),
     ])
 }
 

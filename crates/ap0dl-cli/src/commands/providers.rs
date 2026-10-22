@@ -4,7 +4,20 @@ use ap0dl_core::legacy;
 
 use super::engine;
 
-pub async fn run(config: Config, json: bool, show_legacy: bool) -> Result<()> {
+pub async fn run(config: Config, json: bool, show_legacy: bool, probe: Option<&str>) -> Result<()> {
+    if let Some(url) = probe {
+        let http =
+            ap0dl_core::Http::new(&config).map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        match http.get_text(url, &http.headers()).await {
+            Ok(body) => println!(
+                "OK {} bytes from {url} (reqwest, with native TLS fallback on challenge)",
+                body.len()
+            ),
+            Err(error) => println!("FAILED {url}: {error}"),
+        }
+        return Ok(());
+    }
+
     if show_legacy {
         let legacy = legacy::all();
         if json {

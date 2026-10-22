@@ -3,7 +3,7 @@ members = ["crates/ap0dl-core", "crates/ap0dl-cli"]
 resolver = "2"
 
 [workspace.package]
-version = "2.0.0"
+version = "2.1.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"
@@ -13,6 +13,7 @@ repository = "https://github.com/rares9301/ap0dl"
 async-trait = "0.1"
 aes = "0.8"
 axum = "0.8"
+base64 = "0.22"
 bytes = "1"
 cbc = { version = "0.1", features = ["alloc"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -43,6 +44,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = "2"
 urlencoding = "2"
 which = "8"
+wreq = { version = "0.16", features = ["cookies", "gzip", "brotli"] }
+wreq-util = "0.2"
 
 [profile.release]
 lto = "thin"

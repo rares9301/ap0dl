@@ -1,27 +1,22 @@
-use std::io::IsTerminal;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use ap0dl_core::Config;
 use ap0dl_core::download::header_map;
-use ap0dl_core::engine::fuzzy_score;
-use ap0dl_core::models::{Episode, Stream, Subtitle};
+use ap0dl_core::models::Subtitle;
 use ap0dl_core::player;
 use ap0dl_core::proxy::FlixProxy;
-use ap0dl_core::{Config, Provider, Resolved, SearchResult};
-use dialoguer::{FuzzySelect, Input};
 use futures::future::join_all;
 
-use super::{
-    best_stream, engine, episode_label, episode_selection, resolve_query, selected_episodes,
+use super::fallback::fallback_stream;
+use super::health::{mark_provider_degraded, mark_provider_healthy};
+use super::interactive::{
+    DefaultEpisodes, choose_anime, choose_episodes, is_interactive as terminal_interactive,
 };
+use super::{best_stream, engine, episode_label};
 
 const STREAM_TIMEOUT: Duration = Duration::from_secs(4);
-const FALLBACK_TIMEOUT: Duration = Duration::from_secs(8);
-const PROVIDER_FAILURE_TTL: u64 = 600;
-
-type Hit = (Arc<dyn Provider>, SearchResult);
 
 #[allow(clippy::too_many_arguments)] // mirrors the CLI flag surface
 pub async fn run(
@@ -39,112 +34,19 @@ pub async fn run(
 ) -> Result<()> {
     let default_quality = config.quality.clone();
     let engine = engine(config.clone())?;
-    let interactive =
-        !no_interactive && std::io::stdin().is_terminal() && std::io::stderr().is_terminal();
+    let interactive = terminal_interactive(no_interactive);
 
-    let query = match query.map(str::trim).filter(|query| !query.is_empty()) {
-        Some(query) => query.to_string(),
-        None if interactive => Input::<String>::new()
-            .with_prompt("Search anime")
-            .interact_text()
-            .context("search prompt cancelled")?,
-        None => anyhow::bail!(
-            "an anime query is required when stdin is not a terminal; pass a title, for example: ap0dl stream \"cyberpunk 2\""
-        ),
-    };
-    if query.trim().is_empty() {
-        anyhow::bail!("empty anime query");
-    }
-
-    let mut resolved = if query.starts_with("http://")
-        || query.starts_with("https://")
-        || query.starts_with("www.")
-    {
-        // Direct provider URLs already identify the source; there is nothing
-        // useful to choose in a search menu.
-        resolve_query(&engine, &query, provider, index.unwrap_or(1)).await?
-    } else {
-        let mut hits = engine
-            .search(provider, &query, 1, 40)
-            .await
-            .map_err(|error| anyhow::anyhow!(error.to_string()))
-            .with_context(|| format!("could not search for {query:?}"))?;
-        if hits.is_empty() {
-            anyhow::bail!("no results for {query:?}");
-        }
-        // If a provider's stream endpoint failed recently, keep it in the
-        // list but put healthy providers first. This makes the next play
-        // instant instead of waiting for the same dead endpoint again.
-        sort_hits_by_health(&mut hits);
-
-        let selected = if let Some(index) = index {
-            hits[index.saturating_sub(1) % hits.len()].clone()
-        } else if interactive {
-            let labels: Vec<String> = hits
-                .iter()
-                .map(|(provider, result)| {
-                    let year = result
-                        .year
-                        .map(|year| format!(" ({year})"))
-                        .unwrap_or_default();
-                    format!("[{}] {}{}", provider.name(), result.title, year)
-                })
-                .collect();
-            let choice = FuzzySelect::new()
-                .with_prompt("Select anime (type to fuzzy-filter, Enter to pick)")
-                .items(&labels)
-                .default(0)
-                .interact()
-                .context("anime selection cancelled")?;
-            hits[choice].clone()
-        } else {
-            hits[0].clone()
-        };
-        engine.resolve_result(selected.0, selected.1).await?
-    };
-    let episodes = engine
-        .episodes(&resolved)
-        .await
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    if episodes.is_empty() {
-        anyhow::bail!("no episodes found for {}", resolved.anime.title);
-    }
-
-    let episodes = match range {
-        Some(range) => {
-            let selection = episode_selection(range)?;
-            selected_episodes(&episodes, &selection, include_fillers)
-        }
-        None if interactive => {
-            let visible: Vec<Episode> = episodes
-                .into_iter()
-                .filter(|episode| include_fillers || !episode.filler)
-                .collect();
-            if visible.is_empty() {
-                anyhow::bail!("no episodes matched the selection");
-            }
-            let labels: Vec<String> = visible
-                .iter()
-                .map(|episode| episode.display_title())
-                .collect();
-            let choice = FuzzySelect::new()
-                .with_prompt("Select episode (type to fuzzy-filter, Enter to play)")
-                .items(&labels)
-                .default(0)
-                .interact()
-                .context("episode selection cancelled")?;
-            vec![visible[choice].clone()]
-        }
-        None => episodes
-            .into_iter()
-            .filter(|episode| include_fillers || !episode.filler)
-            .take(1)
-            .collect(),
-    };
-
-    if episodes.is_empty() {
-        anyhow::bail!("no episodes matched the selected range");
-    }
+    let mut resolved = choose_anime(&engine, query, provider, index, interactive).await?;
+    let episodes = choose_episodes(
+        &engine,
+        &resolved,
+        range,
+        include_fillers,
+        interactive,
+        DefaultEpisodes::First,
+        "play",
+    )
+    .await?;
 
     let configured_player = player_override
         .map(str::to_string)
@@ -319,6 +221,14 @@ pub async fn run(
         let mut args = config.player_args.clone();
         args.extend(extra_player_args.clone());
         args.extend(subtitle_args);
+        // AnimeParadise serves HLS segments as `/ts?url=...`, which recent
+        // FFmpeg versions reject because the URL has no extension. These
+        // demuxer options are safe for regular HLS too.
+        if url.contains("stream.animeparadise.moe") {
+            args.push(
+                "--demuxer-lavf-o=allowed_segment_extensions=ALL,extension_picky=0".to_string(),
+            );
+        }
         let headers = stream.headers.clone();
         let player_name = player_name.clone();
         let title_clone = title.clone();
@@ -338,52 +248,6 @@ pub async fn run(
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     }
     Ok(())
-}
-
-/// If a provider returns the right title but its stream endpoint is down,
-/// try the same title on another provider before giving up. This keeps a dead
-/// flixcloud/enc-dec request from blocking playback entirely.
-async fn fallback_stream(
-    engine: &ap0dl_core::Engine,
-    title: &str,
-    current_provider: &str,
-    episode_number: f32,
-) -> Option<(Resolved, Episode, Vec<Stream>)> {
-    let hits = match tokio::time::timeout(FALLBACK_TIMEOUT, engine.search(None, title, 1, 10)).await
-    {
-        Ok(Ok(hits)) => hits,
-        _ => return None,
-    };
-    for (provider, result) in hits {
-        if provider.id() == current_provider || fuzzy_score(title, &result.title) < 0.999 {
-            continue;
-        }
-        let resolved =
-            match tokio::time::timeout(FALLBACK_TIMEOUT, engine.resolve_result(provider, result))
-                .await
-            {
-                Ok(Ok(resolved)) => resolved,
-                _ => continue,
-            };
-        let episodes =
-            match tokio::time::timeout(FALLBACK_TIMEOUT, engine.episodes(&resolved)).await {
-                Ok(Ok(episodes)) => episodes,
-                _ => continue,
-            };
-        let Some(episode) = episodes
-            .into_iter()
-            .find(|episode| (episode.number - episode_number).abs() < 0.001)
-        else {
-            continue;
-        };
-        match tokio::time::timeout(FALLBACK_TIMEOUT, engine.streams(&resolved, &episode)).await {
-            Ok(Ok(streams)) if !streams.is_empty() => {
-                return Some((resolved, episode, streams));
-            }
-            _ => {}
-        }
-    }
-    None
 }
 
 async fn download_subtitles(
@@ -471,46 +335,6 @@ fn is_english(language: &str) -> bool {
 
 fn which_player(name: &str) -> bool {
     which::which(name).is_ok()
-}
-
-/// Keep recently failing providers in the results, but below healthy ones.
-fn sort_hits_by_health(hits: &mut [Hit]) {
-    hits.sort_by_key(|(provider, _)| provider_is_degraded(provider.id()));
-}
-
-fn provider_is_degraded(provider: &str) -> bool {
-    let Ok(value) = std::fs::read_to_string(health_marker(provider)) else {
-        return false;
-    };
-    let Ok(failed_at) = value.trim().parse::<u64>() else {
-        return false;
-    };
-    now_secs().saturating_sub(failed_at) < PROVIDER_FAILURE_TTL
-}
-
-fn mark_provider_degraded(provider: &str) {
-    let marker = health_marker(provider);
-    if let Some(parent) = marker.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(marker, now_secs().to_string());
-}
-
-fn mark_provider_healthy(provider: &str) {
-    let _ = std::fs::remove_file(health_marker(provider));
-}
-
-fn health_marker(provider: &str) -> PathBuf {
-    std::env::temp_dir()
-        .join("ap0dl-provider-health")
-        .join(provider)
-}
-
-fn now_secs() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs()
 }
 
 #[cfg(test)]

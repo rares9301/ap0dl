@@ -407,6 +407,7 @@ impl Provider for AnimeGG {
                         stream_headers.insert("Referer".to_string(), format!("https://{host}/"));
                         streams.push(Stream {
                             url,
+                            container: None,
                             quality,
                             title: Some(format!("[{}] AnimeGG {}", audio.label(), label)),
                             audio,

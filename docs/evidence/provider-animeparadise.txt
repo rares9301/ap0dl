@@ -1,0 +1,1 @@
+{"provider":"animeparadise","search_results":1,"selected_title":"Cyberpunk: Edgerunners","episode_count":10,"streams":[{"quality":1080,"kind":"hls","title":"AnimeParadise 1080p"}],"required_stream":{"quality":1080,"kind":"hls"}}

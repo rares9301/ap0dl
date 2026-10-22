@@ -4,22 +4,27 @@ use anyhow::Result;
 use ap0dl_core::Config;
 use ap0dl_core::download::{DownloadOptions, download_episode};
 
-use super::{
-    best_stream, engine, episode_label, episode_selection, resolve_query, selected_episodes,
+use super::fallback::fallback_stream;
+use super::health::{mark_provider_degraded, mark_provider_healthy};
+use super::interactive::{
+    DefaultEpisodes, choose_anime, choose_episodes, is_interactive as terminal_interactive,
 };
+use super::{best_stream, engine, episode_label};
 
 #[allow(clippy::too_many_arguments)] // mirrors the CLI flag surface
 pub async fn run(
     config: Config,
-    query: &str,
+    query: Option<&str>,
     provider: Option<&str>,
-    index: usize,
-    range: &str,
+    index: Option<usize>,
+    range: Option<&str>,
     quality: Option<&str>,
     dir: Option<PathBuf>,
     include_fillers: bool,
     no_merge: bool,
     json: bool,
+    print_url: bool,
+    no_interactive: bool,
 ) -> Result<()> {
     let default_quality = config.quality.clone();
     let download_root = dir
@@ -27,17 +32,18 @@ pub async fn run(
         .unwrap_or_else(|| PathBuf::from("."));
     let ffmpeg = config.ffmpeg.clone();
     let engine = engine(config)?;
-    let resolved = resolve_query(&engine, query, provider, index).await?;
-    let episodes = engine
-        .episodes(&resolved)
-        .await
-        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
-    let selection = episode_selection(range)?;
-    let episodes = selected_episodes(&episodes, &selection, include_fillers);
-
-    if episodes.is_empty() {
-        anyhow::bail!("no episodes matched the selected range");
-    }
+    let interactive = terminal_interactive(no_interactive);
+    let mut resolved = choose_anime(&engine, query, provider, index, interactive).await?;
+    let episodes = choose_episodes(
+        &engine,
+        &resolved,
+        range,
+        include_fillers,
+        interactive,
+        DefaultEpisodes::All,
+        "download",
+    )
+    .await?;
 
     let options = DownloadOptions {
         ffmpeg,
@@ -47,11 +53,54 @@ pub async fn run(
     };
     let mut downloaded = 0usize;
 
-    for episode in episodes {
-        let streams = engine
-            .streams(&resolved, &episode)
-            .await
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+    for mut episode in episodes {
+        eprintln!(
+            "Resolving {} {}...",
+            resolved.anime.title,
+            episode_label(episode.number)
+        );
+        let streams = match engine.streams(&resolved, &episode).await {
+            Ok(streams) if !streams.is_empty() => streams,
+            other => {
+                if let Err(error) = &other {
+                    eprintln!(
+                        "{} stream resolution failed: {error}; trying another provider...",
+                        resolved.provider.name()
+                    );
+                } else {
+                    eprintln!(
+                        "{} returned no streams; trying another provider...",
+                        resolved.provider.name()
+                    );
+                }
+                mark_provider_degraded(resolved.provider.id());
+                match fallback_stream(
+                    &engine,
+                    &resolved.anime.title,
+                    resolved.provider.id(),
+                    episode.number,
+                )
+                .await
+                {
+                    Some((fallback_resolved, fallback_episode, streams)) => {
+                        eprintln!("Using {} instead.", fallback_resolved.provider.name());
+                        resolved = fallback_resolved;
+                        episode = fallback_episode;
+                        streams
+                    }
+                    None => {
+                        eprintln!(
+                            "No playable streams for {} {}.",
+                            resolved.anime.title,
+                            episode_label(episode.number)
+                        );
+                        continue;
+                    }
+                }
+            }
+        };
+        mark_provider_healthy(resolved.provider.id());
+
         let Some(stream) = best_stream(&streams, quality, &default_quality) else {
             eprintln!(
                 "No playable streams for {} {}.",
@@ -60,6 +109,22 @@ pub async fn run(
             );
             continue;
         };
+        if print_url {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({
+                        "episode": episode.number,
+                        "url": stream.url,
+                        "quality": stream.quality,
+                    }))?
+                );
+            } else {
+                println!("{}", stream.url);
+            }
+            downloaded += 1;
+            continue;
+        }
         eprintln!(
             "Downloading {} {} -> {}",
             resolved.anime.title,

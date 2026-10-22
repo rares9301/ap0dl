@@ -1,11 +1,13 @@
-# ap0dl — typed async Rust engine
+# ap0dl — typed async Rust anime engine
 
-ap0dl is now a Rust workspace with a typed, asynchronous provider engine. The
-original Python package remains in the repository for migration/reference, but
-the `ap0dl` binary is the Rust implementation in `crates/ap0dl-cli`.
+ap0dl is a Rust-only workspace with a typed, asynchronous provider engine. The
+`ap0dl` binary lives in `crates/ap0dl-cli`; all provider, download, proxy and
+selection logic lives in `crates/ap0dl-core`. The Python implementation has been
+removed after the Rust replacement was verified against live sites. No Python
+runtime, package, or Python verification script is required.
 
-The engine was built against live sites, with the Aniyomi extension sources used
-as behavioural references. Only providers that passed a live
+The engine is built against live sites, with Aniyomi extension sources used as
+behavioural references. Only providers that passed a live
 search → details → episodes → stream smoke test are registered.
 
 ## Build
@@ -15,61 +17,99 @@ cargo build --release
 ./target/release/ap0dl --help
 ```
 
-Requires a current stable Rust toolchain (workspace MSRV: 1.85). No Python
-runtime is needed for the Rust binary.
+Requires a current stable Rust toolchain (workspace MSRV: 1.85). The native
+Cloudflare fallback builds BoringSSL through `wreq`; on Arch Linux the build
+dependencies are:
+
+```sh
+pacman -S --needed base-devel cmake clang ffmpeg mpv jq
+```
+
+`ffmpeg` is required for HLS remuxing/subtitle merging, and `mpv` for playback.
+`jq` is only used by the verification scripts.
 
 ## Quick start
 
 ```sh
-# Search all registered providers (or limit to one with --provider)
+# Search every provider; results are fuzzy-ranked locally
 ap0dl search "Bocchi the Rock"
-ap0dl search "anidb:Bocchi the Rock"
-ap0dl episodes "anidb:Bocchi the Rock" --json
+ap0dl search "anidb:Bocchi the Rock" --json
 
-# Interactive: fuzzy-filter the anime, then the episode, then play
+# Episode list
+ap0dl episodes "anidb:cyberpunk 2" --json
+
+# Interactive: fuzzy anime picker, then fuzzy episode picker, then play
 ap0dl stream "cyberpunk 2"
 
-# Non-interactive / scripted
-ap0dl stream "cyberpunk 2" --index 1 --range 1
-ap0dl stream "reanime:Bocchi the Rock" --range 1 --print-url
+# Interactive: the same two pickers, then a real-time download progress bar
+ap0dl download "cyberpunk 2"
 
-# Resolve streams (JSON for external tools)
+# Scripted / non-TTY use
+ap0dl stream "cyberpunk 2" --index 1 --range 1 --print-url
+ap0dl download "anidb:cyberpunk 2" --range 2 --quality 1080 -d ./downloads
+ap0dl download "animetoki:cyberpunk edgerunners" --range 1 --print-url
+
+# Resolve stream JSON for external tools
 ap0dl grab "anidb:Bocchi the Rock" --range 1 --quality 1080
-ap0dl grab "kisskh:Bocchi the Rock" --range 1
-
-# Download
-ap0dl download "animegg:Bocchi the Rock" --range 1-3 -d ./downloads
+ap0dl grab "animeparadise:cyberpunk edgerunners" --range 1
 ```
 
 Provider prefixes use `provider:query`. A provider URL can also be passed
 directly (`https://kisskh.co/drama/...`), in which case the engine selects the
 provider by hostname. Search result selection is one-based via `--index`.
 
-Without an explicit provider, search requests run concurrently against every
-registered provider and results are ranked with local fuzzy matching (title
-tokens, season numbers and edit distance). This avoids trusting a site's loose
-server-side search. `default_provider` only breaks ties between equally good
-matches. In an interactive terminal, `stream` opens a `dialoguer` fuzzy picker;
-`--index`/`--range` or `--no-interactive` keeps it scriptable. If `stream` is
-run without a query, it prompts for one.
+Without an explicit provider, searches run concurrently against every registered
+provider and results are ranked locally by title tokens, season numbers and edit
+distance. `default_provider` only breaks ties between equally good matches.
+`stream` and `download` share the exact same fuzzy picker implementation. Pass
+`--index`/`--range` or `--no-interactive` for scripts and pipes.
 
 ## Working providers
 
-Live smoke tests were run on 2026-10-21. "1080p" means the provider exposed a
+Live smoke tests were run on 2026-10-22. “1080p” means the provider exposed a
 1080p variant in the tested stream; availability can vary by title/episode.
 
-| ID | Source | Status | Search/details/episodes | Stream path | 1080p observed |
-|---|---|---|---|---|---|
-| `reanime` | Re:Anime (`reanime.to`) | stable | live | HLS via Flixcloud + local decrypt proxy | **yes** — Bocchi E1: HD-1/HD-2 1080p |
-| `animegg` | AnimeGG (`animegg.org`) | stable | live | direct MP4 qualities | **yes** — Frieren S2 E1 1080p; Bocchi E1 is 720p/480p upstream |
-| `anidb` | AniDB / Anila (`anilab2.amdapi.click`, `play.anidb.app`) | stable | live | HLS masters | **yes** — Bocchi E1: 1080p, 720p, 360p |
-| `kisskh` | KissKH (`kisskh.co`) | stable | live | HLS/CDN via public episode-key service | 720p observed (Bocchi, Frieren, Solo Leveling); source-dependent |
+| ID | Source | Search/details/episodes | Stream path | 1080p observed |
+|---|---|---|---|---|
+| `reanime` | Re:Anime (`reanime.to`) | live | HLS via Flixcloud + local decrypt proxy | **yes** — Bocchi E1: HD-1/HD-2 1080p |
+| `animegg` | AnimeGG (`animegg.org`) | live | direct MP4 qualities | **yes** — Frieren S2 E1 1080p |
+| `anidb` | AniDB / Anila (`anilab2.amdapi.click`, `anidb.se`) | live | HLS masters; HTML fallback adds 720p MP4s and missing episodes | **yes** — Bocchi E1 1080p; Cyberpunk 2 E1 API 1080p |
+| `kisskh` | KissKH (`kisskh.co`) | live | HLS/CDN via public episode-key service | 720p observed; source-dependent |
+| `animeparadise` | AnimeParadise (`animeparadise.moe`) | live | opaque-token HLS with 1080p variants and subtitles | **yes** — Cyberpunk E1 1080p |
+| `animetoki` | AnimeToki (`animetoki.com`) | live | Cloudflare Worker file index; direct MKV | **yes** — Cyberpunk E1 1080p HEVC |
 
-> **2026-10-22:** Re:Anime's `enc-dec.app` Flixcloud metadata endpoint is
-> currently timing out. Search/details/episodes still work, but stream metadata
-> may be missing its resolution. `stream` detects the timeout and automatically
-> falls back to the same title on AniDB (1080p verified). Use
-> `--player mpv` to force Linux mpv on WSL; the default is Windows `mpv.exe`.
+`ap0dl providers` lists the compiled-in sources and
+`ap0dl providers --probe <url>` exercises the shared HTTP client.
+
+### Provider notes
+
+- **Re:Anime** resolves `/api/v1/search` → `/api/v1/anime/{slug}` →
+  `/api/v1/anime/{slug}/episodes` → `/api/flix/{anilistId}/{ep}`. The Flixcloud
+  embed is decrypted through `enc-dec.app`, then served through a local proxy
+  that rewrites playlists/keys/segments and strips fake image headers. If the
+  upstream metadata endpoint times out, `stream` automatically tries another
+  provider with the same title.
+- **AnimeGG** parses HTML search/series pages and inline `videoSources` JSON on
+  the embed page. Streams are direct MP4s with a `Referer` header.
+- **AniDB / Anila** uses the public JSON API for posts/episodes and the play API
+  for server iframes. The API occasionally omits middle episodes (it returned
+  only 1 and 10 for *Cyberpunk: Edgerunners 2*), so the provider merges the API
+  list with the anidb.se HTML episode list. Web episodes resolve to 720p MP4s
+  with the required `Referer`; API episodes keep their 1080p HLS server list.
+- **KissKH** uses the public `DramaList` JSON endpoints and the same public Apps
+  Script key services as the Aniyomi extension. Episode keys are fetched per
+  episode and used to obtain the CDN HLS URL. Encrypted `.txt` subtitles are
+  skipped rather than passed to a player as unreadable files.
+- **AnimeParadise** uses its public JSON catalogue, resolves an opaque playback
+  token, and exposes every resolution from the HLS master. Segments are served
+  as `/ts?url=...`, so the stream command adds
+  `--demuxer-lavf-o=allowed_segment_extensions=ALL,extension_picky=0` for mpv.
+  English/default subtitles are exposed and merged into downloads.
+- **AnimeToki** parses the WordPress catalogue and resolves a Cloudflare Worker
+  file index. Folder URLs are base64-normalised before the POST because the
+  worker redirects percent-encoded paths and converts POST redirects to GET.
+  The result is a direct 1080p MKV; the provider’s `container: "mkv"` hint is
+  preserved by the downloader.
 
 The default quality is `best`, so the highest advertised stream wins. Explicit
 selectors are available:
@@ -83,46 +123,28 @@ ap0dl grab "reanime:Bocchi the Rock" --range 1 --quality "best[subtitles]/best"
 The quality parser supports `best`, `worst`, exact resolutions (`1080`, `720p`),
 comparators (`>=720`, `<=1080`), audio/attribute filters (`sub`, `dub`,
 `subtitles`, `[server=HD-1]`, `[title=r"^\[Dub\]"]`), and slash fallbacks.
-The old `best[subtitles]/best` ordering is still available when subtitle
-presence matters more than resolution.
-
-### Provider notes
-
-- **Re:Anime** resolves `/api/v1/search` → `/api/v1/anime/{slug}` →
-  `/api/v1/anime/{slug}/episodes` → `/api/flix/{anilistId}/{ep}`. The Flixcloud
-  embed is decrypted through `enc-dec.app`, then served through a local proxy
-  that rewrites playlists/keys/segments and strips fake image headers. This is
-  what keeps 1080p HLS playable in normal players and in the downloader.
-- **AnimeGG** parses the HTML search/series pages and inline `videoSources`
-  JSON on the embed page. Streams are direct MP4s with `Referer` headers.
-- **AniDB / Anila** uses the public JSON API for posts/episodes and the play API
-  for server iframes. Iframe links are HLS masters with 1080p/720p/360p
-  variants; each variant is exposed separately.
-- **KissKH** uses the public `DramaList` JSON endpoints and the same public
-  Apps Script key services as the Aniyomi extension. Episode keys are fetched
-  per episode and used to obtain the CDN HLS URL. Encrypted `.txt` subtitles are
-  intentionally skipped rather than passed to a player as unreadable files.
 
 ## Legacy providers (explicitly deprecated)
 
-These are not registered in the engine because no live stream path was usable
-from this sandbox. Observed evidence is recorded in
-[`docs/legacy-providers.md`](docs/legacy-providers.md) and is available from the
-CLI:
+These are not registered because no live stream path was usable. Observed
+evidence is recorded in [`docs/legacy-providers.md`](docs/legacy-providers.md)
+and is available from the CLI:
 
 ```sh
 ap0dl providers --legacy
+ap0dl providers --legacy --json
 ```
 
-| ID | Provider | Status | Observation |
-|---|---|---|---|
-| `animepahe` | AnimePahe | deprecated | Cloudflare 403 (`animepahe.pw`); challenge shell on `animepahe.su` |
-| `gogoanime` | Gogoanime / Anitaku | deprecated | `gogoanime.bid` redirected to an HTTP 401 endpoint; `anitaku.pe` is parked |
-| `allanime` | AllAnime | deprecated | API returns Cloudflare 403; earlier source query returned `AA_CRYPTO_MISSING` |
-| `aniwave` | AniWave / 9anime | deprecated | redirects to parked `ww38.aniwave.to`, no watch/search links |
+| ID | Provider | Observation |
+|---|---|---|
+| `animepahe` | AnimePahe | Cloudflare 403 (`animepahe.pw`); challenge shell on `animepahe.su` |
+| `gogoanime` | Gogoanime / Anitaku | `gogoanime.bid` redirected to an HTTP 401 endpoint; `anitaku.pe` is parked |
+| `allanime` | AllAnime | API returns Cloudflare 403; earlier source query returned `AA_CRYPTO_MISSING` |
+| `aniwave` | AniWave / 9anime | redirects to parked `ww38.aniwave.to` |
 
-Repairing any of these requires a new live endpoint and a fresh end-to-end
-smoke test before it is moved into the working provider registry.
+Additional sites probed on 2026-10-22 — AniHQ, Kimoitv, Anikuro and HStream —
+are also documented with observed responses. Repairing any legacy entry requires
+a new live endpoint and a fresh end-to-end smoke test before registration.
 
 ## Configuration
 
@@ -150,6 +172,7 @@ player = "mpv"
 ffmpeg = "ffmpeg"
 request_delay_ms = 250
 timeout_secs = 30
+merge_subtitles = true
 ```
 
 Provider endpoints can be overridden in `[providers.*]`, and common settings
@@ -163,102 +186,141 @@ have environment variables:
 | `AP0DL_DOWNLOAD_DIR` | download root |
 | `AP0DL_PLAYER`, `AP0DL_FFMPEG` | player/remuxer binaries |
 | `AP0DL_REQUEST_DELAY_MS` | shared request delay |
-| `AP0DL_REANIME_BASE`, `AP0DL_ANIMEGG_BASE`, `AP0DL_ANIDB_BASE`, `AP0DL_ANIDB_PLAY`, `AP0DL_KISSKH_BASE` | provider endpoints |
+| `AP0DL_REANIME_BASE`, `AP0DL_ANIMEGG_BASE` | provider bases |
+| `AP0DL_ANIDB_BASE`, `AP0DL_ANIDB_PLAY`, `AP0DL_ANIDB_WEB` | AniDB API/play/web bases |
+| `AP0DL_KISSKH_BASE` | KissKH base |
+| `AP0DL_ANIMEPARADISE_BASE`, `AP0DL_ANIMEPARADISE_API`, `AP0DL_ANIMEPARADISE_STREAM` | AnimeParadise bases |
+| `AP0DL_ANIMETOKI_BASE`, `AP0DL_ANIMETOKI_CLOUD` | AnimeToki bases |
 
-`request_delay_ms` is a reliability setting for shared CDNs; it is not a
-completion constraint.
+`request_delay_ms` is a CDN-reliability setting, not a completion requirement.
 
 ## Streaming
 
-`stream` resolves one episode by default; pass `--range` for a range or `:`
-for every episode. In a terminal it uses a fuzzy anime picker and then a fuzzy
+`stream` resolves one episode by default; pass `--range` for a range or `:` for
+every episode. In a terminal it shows a fuzzy anime picker and then a fuzzy
 episode picker. Subtitle tracks are downloaded eagerly only for the
-default/English tracks (up to four) to keep startup fast; the player still
-receives every selected track. If a provider's stream endpoint times out or
-returns nothing, the same title is tried on another provider that has that
-episode before the command gives up. A failed stream endpoint is remembered
-for ten minutes, so the next run puts healthy providers first and starts
-immediately instead of waiting for the same timeout again.
+default/English tracks (up to four); the player still receives every selected
+track.
 
-On WSL, the default `player = "mpv"` resolves to Windows `mpv.exe` when it is
-available. That uses the native Windows GPU stack and avoids the laggy,
-oddly-bordered X11/WSLg window produced by Linux mpv. If `mpv.exe` is missing,
-the Linux mpv fallback uses `--vo=x11 --hwdec=no` (unless `--vo` is supplied).
-Use `--player mpv` to force Linux mpv on WSL, or `--player mpv.exe` to force
-the Windows player. Subtitle URLs are passed directly to Windows mpv because it
-cannot read Linux temporary paths.
+Provider selection is health-aware. When a provider’s stream endpoint fails,
+times out, or returns no streams, that provider is demoted for ten minutes via
+`/tmp/ap0dl-provider-health`, the same title is searched on the other live
+providers, and the next provider that has the exact episode is used. Successful
+providers are marked healthy again. This means one dead upstream does not block
+playback or download.
+
+On WSL, the default `player = "mpv"` resolves to Windows `mpv.exe` when
+available. That uses the native Windows GPU stack and avoids the laggy X11/WSLg
+window from Linux mpv. If `mpv.exe` is missing, Linux mpv falls back to
+`--vo=x11 --hwdec=no` unless `--vo` is supplied. Use `--player mpv` to force
+Linux mpv, or `--player mpv.exe` to force the Windows player. Subtitle URLs are
+passed directly to Windows mpv because it cannot read Linux temporary paths.
 
 ## Downloads
 
-`download` handles both direct MP4 and HLS streams:
+`download` uses the same fuzzy anime/episode pickers as `stream`. Without
+`--index`/`--range`, a terminal gets both pickers and a script gets every episode
+for the chosen title. Downloads show a real-time `indicatif` progress bar with
+bytes, speed and ETA (direct files) or segment counts (HLS).
 
-- HLS master/media playlists, AES-128 segments (including the default IV
+The download engine handles:
+
+- HLS master/media playlists, AES-128 segments (including default IV
   derivation), fake PNG/WebP headers, and Flixcloud XOR-masked segments;
-- direct MP4 downloads with resume/`Range` retry when CDNs reset connections;
-- optional subtitle files and ffmpeg remuxing. If ffmpeg is unavailable, HLS
-  downloads are written as playable MPEG-TS (`.ts`) files.
+- direct MP4/MKV downloads with resume/`Range` retry when CDNs reset;
+- optional subtitle files and ffmpeg remuxing/merging;
+- provider container hints, so AnimeToki files are saved as `.mkv` instead of
+  being renamed to `.mp4`;
+- `--no-merge` to keep raw HLS output and skip remux/subtitle merging;
+- `--print-url` (and `--json` with `--print-url`) for scripting.
 
-Use `--no-merge` to keep the raw `.ts` output and skip remux/subtitle merging.
-The download root is the current directory unless `-d/--dir` or
-`download_dir` is configured.
+Verified live outputs:
 
-Verified live examples from this workspace:
+- AniDB *Cyberpunk 2* E02: 164,375,734-byte MP4, H.264/AAC 1280×720.
+- AnimeParadise *Cyberpunk* E01: 331,133,283-byte MKV, H.264/AAC 1920×1080
+  plus merged SubRip subtitles.
+- AnimeToki *Cyberpunk* E01: 506,827,883-byte MKV, HEVC 1920×1080, dual AAC and
+  embedded subtitle tracks.
 
-- Re:Anime HLS download: `/tmp/ap0dl-dl/Bocchi the Rock!/E01.ts`,
-  324,500,784 bytes, MPEG-TS sync every 188 bytes.
-- AnimeGG direct MP4: `/tmp/ap0dl-mp4/One Piece/E01.mp4`, 65,537,496 bytes,
-  starts with `ftypisom`.
-- AniDB 360p HLS: `/tmp/ap0dl-anidb/Bocchi the Rock!/E01.ts`, 45,170,008 bytes,
-  MPEG-TS sync every 188 bytes.
+## Native Cloudflare handling
+
+`crates/ap0dl-core/src/cloudflare.rs` runs a second HTTP client built on `wreq`
+with Chrome 137 TLS/HTTP2 impersonation. The shared request layer invokes it
+after a 403/503 response or a 200 response carrying a challenge shell. It does
+**not** execute JavaScript, drive a browser or solve Turnstile; sites requiring
+those remain explicitly blocked. No Selenium/Playwright dependency exists in the
+workspace.
+
+Example probe:
+
+```sh
+ap0dl providers --probe 'https://anihq.cc/search/?q=cyberpunk'
+```
 
 ## Architecture
 
 ```text
 crates/ap0dl-core
-  config, http, models, provider trait/registry, engine
-  providers/{reanime,animegg,anidb,kisskh}
-  download/{mod,hls}, proxy, quality, ranges, player, aniskip
+  config, http, cloudflare, models, provider trait/registry, engine, legacy
+  providers/{reanime,animegg,anidb,kisskh,animeparadise,animetoki}
+  download/{mod,hls}, proxy, quality, ranges, player, aniskip, util
 crates/ap0dl-cli
   search, episodes, grab, stream, download, providers, config
+  commands/{interactive,health,fallback}
 ```
 
 The provider trait is async and receives the shared `Http` client, so retries,
-cookies, cache and request pacing are uniform. Streams carry quality, audio,
-server, subtitle, header, HLS/direct kind, and optional Flixcloud metadata.
+cookies, cache, Cloudflare fallback and request pacing are uniform. Streams carry
+quality, audio, server, subtitle, header, HLS/direct kind, container hint and
+optional Flixcloud metadata. The picker and health/fallback logic are CLI
+modules shared by both playback and downloading.
 
 ## Verification
 
-The ordered implementation checklist is kept in
+The ordered implementation checklist is in
 [`docs/goal-checklist.md`](docs/goal-checklist.md), mirrored to
-`/root/goals/ap0dl-rust-rewrite.md`.
+`/root/goals/ap0dl-rust-rewrite.md`. Live evidence for the current goal is in
+[`docs/evidence/live-smoke-2026-10-22.md`](docs/evidence/live-smoke-2026-10-22.md).
 
 ```sh
 cargo build --workspace
-cargo test --workspace
+cargo test --workspace           # 56 passed
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+./scripts/verify-improvements.sh
+./scripts/verify-goal.sh
 ```
 
-The test suite covers quality selection (including the 1080p preference), episode
-ranges, HLS playlist/AES parsing, fake-header/XOR stripping, proxy URL
-classification, and provider parsers. Live smoke tests are manual because they
-depend on external sites; see the provider table above and the commands in
-[`docs/legacy-providers.md`](docs/legacy-providers.md).
+`verify-improvements.sh` checks the live AniDB 10-episode list, AnimeParadise and
+AnimeToki 1080p streams, the shared CLI surface, health ordering, automatic
+fallback and the Cloudflare probe. `verify-goal.sh` runs the full local harness
+and all six live provider smokes. The test suite covers quality selection
+(including the 1080p preference), episode ranges, HLS playlist/AES parsing,
+fake-header/XOR stripping, proxy URL handling, Cloudflare challenge detection and
+provider parsers.
 
-## Migration from Python
+## Rust-only migration
 
-The original Python code is intentionally still present and is not deleted by
-the Rust migration. To use the old engine, keep using `runner.py`/the Python
-package. To use the new engine, run the Rust binary. The configuration formats
-differ (TOML vs YAML); start from `ap0dl config --sample` and port only the
-providers/settings you need. The Rust engine does not read the legacy
-`ap0dl_config.yml`.
+The Python package, `pyproject.toml`, `poetry.lock`, Python README and Python
+verification scripts were deleted after the Rust engine passed build, test and
+live download checks. The old Python code remains available in git history for
+reference, but this working tree is Rust-only.
 
-Once the Rust binary is installed and your workflows are verified, the Python
-package can be kept as a compatibility surface or removed in a separate,
-explicit change.
+The configuration format changed from YAML to TOML; start from
+`ap0dl config --sample`. The CLI equivalents are:
+
+| Old concept | Rust command |
+|---|---|
+| search | `ap0dl search "title"` |
+| episode list | `ap0dl episodes "query" --json` |
+| resolve/play | `ap0dl stream "query"` |
+| download | `ap0dl download "query" --range 1-3` |
+| provider status | `ap0dl providers` |
+| config inspection | `ap0dl config --sample` |
 
 ## Scope note
 
 This is a sandboxed research/porting effort against public sites. Endpoint
-availability, Cloudflare rules and CDN behavior change frequently; a provider
-is only considered working after the live smoke tests above. The deprecated
-providers are documented rather than silently faked.
+availability, Cloudflare rules and CDN behaviour change frequently; a provider is
+considered working only after the live smoke tests above. Deprecated or blocked
+sites are documented rather than silently faked.

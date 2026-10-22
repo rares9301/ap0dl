@@ -8,7 +8,8 @@ cargo test --workspace parses_1080p_variants
 
 grep -q 'quality: "best"' crates/ap0dl-core/src/config.rs
 grep -q '1080' crates/ap0dl-core/src/quality.rs
-grep -q '1080' crates/ap0dl-core/src/providers/anidb.rs
-grep -q '1080' crates/ap0dl-core/src/providers/kisskh.rs
+for provider in anidb kisskh animeparadise animetoki; do
+    grep -q '1080' "crates/ap0dl-core/src/providers/$provider.rs"
+done
 
-echo "PASS: 1080p preference, quality parsing and 1080p variant tests"
+echo "PASS: 1080p preference, quality parsing and provider 1080p variant tests"

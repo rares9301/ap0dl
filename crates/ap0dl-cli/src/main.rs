@@ -97,14 +97,20 @@ pub enum Command {
     },
 
     /// Download episodes to disk.
+    ///
+    /// With no --index/--range, opens the same fuzzy search and episode
+    /// pickers as `stream`; downloads show a live byte/segment progress bar.
     Download {
-        query: String,
+        /// Anime title. Omit to be prompted interactively.
+        query: Option<String>,
         #[arg(long)]
         provider: Option<String>,
-        #[arg(long, default_value_t = 1)]
-        index: usize,
-        #[arg(short = 'r', long, default_value = ":")]
-        range: String,
+        /// Skip the anime picker and choose this one-based result.
+        #[arg(long)]
+        index: Option<usize>,
+        /// Episode range (for example 1, 1-3, :). Omit for an episode picker.
+        #[arg(short = 'r', long)]
+        range: Option<String>,
         #[arg(short = 'q', long)]
         quality: Option<String>,
         #[arg(short = 'd', long)]
@@ -115,6 +121,12 @@ pub enum Command {
         no_merge: bool,
         #[arg(long)]
         json: bool,
+        /// Print resolved media URLs instead of downloading.
+        #[arg(long)]
+        print_url: bool,
+        /// Disable the interactive picker and use the best automatic match.
+        #[arg(long)]
+        no_interactive: bool,
     },
 
     /// List compiled-in providers and their support status.
@@ -124,6 +136,9 @@ pub enum Command {
         /// Show legacy providers that were checked and deprecated, with HTTP evidence.
         #[arg(long)]
         legacy: bool,
+        /// Probe a URL through the shared client (including native TLS impersonation).
+        #[arg(long)]
+        probe: Option<String>,
     },
 
     /// Show, print or initialize configuration.
@@ -233,24 +248,30 @@ async fn main() -> anyhow::Result<()> {
             include_fillers,
             no_merge,
             json,
+            print_url,
+            no_interactive,
         } => {
             commands::download::run(
                 config,
-                &query,
+                query.as_deref(),
                 provider.as_deref(),
                 index,
-                &range,
+                range.as_deref(),
                 quality.as_deref(),
                 dir,
                 include_fillers,
                 no_merge,
                 json,
+                print_url,
+                no_interactive,
             )
             .await?
         }
-        Command::Providers { json, legacy } => {
-            commands::providers::run(config, json, legacy).await?
-        }
+        Command::Providers {
+            json,
+            legacy,
+            probe,
+        } => commands::providers::run(config, json, legacy, probe.as_deref()).await?,
         Command::Config { path, sample, init } => {
             commands::config::run(config, path, sample, init).await?
         }
