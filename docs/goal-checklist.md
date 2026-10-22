@@ -59,10 +59,10 @@ Status legend: `[ ]` not started · `[~]` in progress (Started `[x]`) · `[x]` d
 | 12 | AniWave/9anime audit and disposition | [x] | [x] | Deprecated: redirects to parked `ww38.aniwave.to`; no watch/search links |
 | 13 | Download engine: direct MP4 + HLS parser, AES-128, image-header stripping, XOR segments, resume, ffmpeg merge | [x] | [x] | Re:Anime AES HLS, AnimeGG direct MP4 and AniDB header-authenticated HLS downloaded |
 | 14 | CLI: search, episodes, grab, stream, download, providers, config; provider prefixes/URL detection; range/quality flags | [x] | [x] | `providers --legacy` exposes deprecation evidence; no empty-result panic |
-| 15 | Tests: quality/ranges/HLS/AES/proxy/provider parsers + legacy evidence | [x] | [x] | `cargo test --workspace`: 48 passed, 0 failed (re-run in final verification) |
+| 15 | Tests: quality/ranges/HLS/AES/proxy/provider parsers + legacy evidence | [x] | [x] | `cargo test --workspace`: 49 passed, 0 failed (re-run in final verification) |
 | 16 | Docs: Rust README, provider matrix, config/migration, legacy evidence page | [x] | [x] | `readme.md` rewritten; `docs/legacy-providers.md`; old README preserved as `docs/python-readme.md` |
 | 17 | Python retention / migration boundary | [x] | [x] | Python code retained untouched; Rust engine is the `ap0dl` binary; config format migration documented |
-| 18 | Final verification and requirement-by-requirement audit | [x] | [x] | `cargo build --workspace`, `cargo test --workspace` (48 passed), `cargo fmt --check`, `cargo clippy -D warnings` all pass; final live smokes for all four providers passed |
+| 18 | Final verification and requirement-by-requirement audit | [x] | [x] | `cargo build --workspace`, `cargo test --workspace` (49 passed), `cargo fmt --check`, `cargo clippy -D warnings` all pass; final live smokes for all four providers passed |
 
 ## Live smoke evidence (2026-10-21)
 
@@ -104,12 +104,12 @@ All commands used the built Rust binary from this workspace.
   requirements. Added AniDB/Anila and KissKH providers; verified live search,
   details, episodes and streams. Added legacy CLI evidence and docs; rewrote
   README with provider matrix/migration; fixed empty-search panic; rebuilt and
-  ran 48 tests.
+  ran 49 tests.
 - 2026-10-21 06:3x — Per-provider assertion scripts (`scripts/verify-provider.sh`) re-ran all four live source flows successfully.
 - 2026-10-21 06:4x — Final audit passed. Re-ran all four live provider smokes
   after the last edits: Re:Anime 1080p HLS, AnimeGG 1080p direct MP4, AniDB
   1080p HLS + 12 episodes, KissKH 720p HLS + 12 episodes. `cargo build
-  --workspace`, `cargo test --workspace` (48/48), `cargo fmt --check` and
+  --workspace`, `cargo test --workspace` (49/49), `cargo fmt --check` and
   `cargo clippy --workspace --all-targets -- -D warnings` all pass. The Rust
   engine replaces the Python engine for the CLI; Python remains untouched.
 
@@ -117,7 +117,15 @@ All commands used the built Rust binary from this workspace.
   with local fuzzy ranking (`cyberpunk 2` now selects Cyberpunk: Edgerunners 2),
   fuzzy anime and episode pickers, one-episode stream default, capped
   English/default subtitle downloads, and a WSL mpv X11 fallback. `cargo test
-  --workspace` (48/48) and live Cyberpunk playback were re-verified.
+  --workspace` (49/49) and live Cyberpunk playback were re-verified.
+
+- 2026-10-22 — WSL/mpv parity: default `mpv` now resolves to Windows
+  `mpv.exe` when available (native GPU window), Linux mpv falls back to X11
+  only when needed, subtitle URLs are passed directly to Windows mpv, and a
+  timed-out stream falls back to the same title on another provider. 49 tests
+  pass. Live Cyberpunk playback was verified through the AniDB fallback;
+  Re:Anime's Flixcloud metadata endpoint is currently timing out, so its strict
+  1080p provider smoke cannot pass until that upstream recovers.
 
 ## Notes
 

@@ -1,18 +1,27 @@
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use ap0dl_core::Config;
 use ap0dl_core::download::header_map;
-use ap0dl_core::models::{Episode, Subtitle};
+use ap0dl_core::engine::fuzzy_score;
+use ap0dl_core::models::{Episode, Stream, Subtitle};
 use ap0dl_core::player;
 use ap0dl_core::proxy::FlixProxy;
+use ap0dl_core::{Config, Provider, Resolved, SearchResult};
 use dialoguer::{FuzzySelect, Input};
 use futures::future::join_all;
 
 use super::{
     best_stream, engine, episode_label, episode_selection, resolve_query, selected_episodes,
 };
+
+const STREAM_TIMEOUT: Duration = Duration::from_secs(4);
+const FALLBACK_TIMEOUT: Duration = Duration::from_secs(8);
+const PROVIDER_FAILURE_TTL: u64 = 600;
+
+type Hit = (Arc<dyn Provider>, SearchResult);
 
 #[allow(clippy::too_many_arguments)] // mirrors the CLI flag surface
 pub async fn run(
@@ -47,12 +56,15 @@ pub async fn run(
         anyhow::bail!("empty anime query");
     }
 
-    let resolved = if let Some(index) = index {
-        resolve_query(&engine, &query, provider, index).await?
-    } else if !interactive {
-        resolve_query(&engine, &query, provider, 1).await?
+    let mut resolved = if query.starts_with("http://")
+        || query.starts_with("https://")
+        || query.starts_with("www.")
+    {
+        // Direct provider URLs already identify the source; there is nothing
+        // useful to choose in a search menu.
+        resolve_query(&engine, &query, provider, index.unwrap_or(1)).await?
     } else {
-        let hits = engine
+        let mut hits = engine
             .search(provider, &query, 1, 40)
             .await
             .map_err(|error| anyhow::anyhow!(error.to_string()))
@@ -60,24 +72,35 @@ pub async fn run(
         if hits.is_empty() {
             anyhow::bail!("no results for {query:?}");
         }
-        let labels: Vec<String> = hits
-            .iter()
-            .map(|(provider, result)| {
-                let year = result
-                    .year
-                    .map(|year| format!(" ({year})"))
-                    .unwrap_or_default();
-                format!("[{}] {}{}", provider.name(), result.title, year)
-            })
-            .collect();
-        let choice = FuzzySelect::new()
-            .with_prompt("Select anime (type to fuzzy-filter, Enter to pick)")
-            .items(&labels)
-            .default(0)
-            .interact()
-            .context("anime selection cancelled")?;
-        let (provider, result) = hits[choice].clone();
-        engine.resolve_result(provider, result).await?
+        // If a provider's stream endpoint failed recently, keep it in the
+        // list but put healthy providers first. This makes the next play
+        // instant instead of waiting for the same dead endpoint again.
+        sort_hits_by_health(&mut hits);
+
+        let selected = if let Some(index) = index {
+            hits[index.saturating_sub(1) % hits.len()].clone()
+        } else if interactive {
+            let labels: Vec<String> = hits
+                .iter()
+                .map(|(provider, result)| {
+                    let year = result
+                        .year
+                        .map(|year| format!(" ({year})"))
+                        .unwrap_or_default();
+                    format!("[{}] {}{}", provider.name(), result.title, year)
+                })
+                .collect();
+            let choice = FuzzySelect::new()
+                .with_prompt("Select anime (type to fuzzy-filter, Enter to pick)")
+                .items(&labels)
+                .default(0)
+                .interact()
+                .context("anime selection cancelled")?;
+            hits[choice].clone()
+        } else {
+            hits[0].clone()
+        };
+        engine.resolve_result(selected.0, selected.1).await?
     };
     let episodes = engine
         .episodes(&resolved)
@@ -123,24 +146,127 @@ pub async fn run(
         anyhow::bail!("no episodes matched the selected range");
     }
 
-    let player_name = player_override
+    let configured_player = player_override
         .map(str::to_string)
         .unwrap_or_else(|| config.player.clone());
-    let player_name = if which_player(&player_name) {
-        player_name
+    // The default "mpv" means "the best mpv for this host"; on WSL that is
+    // Windows mpv.exe, which has native hardware acceleration. An explicit
+    // --player mpv still selects Linux mpv.
+    let player_name = if player_override.is_none() && configured_player == "mpv" {
+        player::find_player().unwrap_or(configured_player)
+    } else if which_player(&configured_player) {
+        configured_player
     } else {
-        player::find_player().unwrap_or(player_name)
+        player::find_player().unwrap_or(configured_player)
     };
+    let windows_mpv = player::is_windows_player(&player_name) && player::is_mpv_like(&player_name);
 
     for episode in episodes {
-        let streams = engine
-            .streams(&resolved, &episode)
-            .await
-            .map_err(|error| anyhow::anyhow!(error.to_string()))?;
+        let mut playback_episode = episode.clone();
+        let streams = match tokio::time::timeout(
+            STREAM_TIMEOUT,
+            engine.streams(&resolved, &playback_episode),
+        )
+        .await
+        {
+            Ok(Ok(streams)) if !streams.is_empty() => streams,
+            Ok(Ok(_)) => {
+                mark_provider_degraded(resolved.provider.id());
+                eprintln!(
+                    "{} returned no streams for {}; trying another provider...",
+                    resolved.provider.name(),
+                    episode_label(playback_episode.number)
+                );
+                match fallback_stream(
+                    &engine,
+                    &resolved.anime.title,
+                    resolved.provider.id(),
+                    playback_episode.number,
+                )
+                .await
+                {
+                    Some((fallback_resolved, fallback_episode, streams)) => {
+                        eprintln!("Using {} instead.", fallback_resolved.provider.name());
+                        resolved = fallback_resolved;
+                        playback_episode = fallback_episode;
+                        streams
+                    }
+                    None => {
+                        eprintln!(
+                            "No playable streams for {} {}.",
+                            resolved.anime.title,
+                            episode_label(playback_episode.number)
+                        );
+                        continue;
+                    }
+                }
+            }
+            Ok(Err(error)) => {
+                mark_provider_degraded(resolved.provider.id());
+                eprintln!(
+                    "{} stream resolution failed: {error}; trying another provider...",
+                    resolved.provider.name()
+                );
+                match fallback_stream(
+                    &engine,
+                    &resolved.anime.title,
+                    resolved.provider.id(),
+                    playback_episode.number,
+                )
+                .await
+                {
+                    Some((fallback_resolved, fallback_episode, streams)) => {
+                        eprintln!("Using {} instead.", fallback_resolved.provider.name());
+                        resolved = fallback_resolved;
+                        playback_episode = fallback_episode;
+                        streams
+                    }
+                    None => {
+                        eprintln!(
+                            "No playable streams for {} {}.",
+                            resolved.anime.title,
+                            episode_label(playback_episode.number)
+                        );
+                        continue;
+                    }
+                }
+            }
+            Err(_) => {
+                mark_provider_degraded(resolved.provider.id());
+                eprintln!(
+                    "{} stream resolution timed out; trying another provider...",
+                    resolved.provider.name()
+                );
+                match fallback_stream(
+                    &engine,
+                    &resolved.anime.title,
+                    resolved.provider.id(),
+                    playback_episode.number,
+                )
+                .await
+                {
+                    Some((fallback_resolved, fallback_episode, streams)) => {
+                        eprintln!("Using {} instead.", fallback_resolved.provider.name());
+                        resolved = fallback_resolved;
+                        playback_episode = fallback_episode;
+                        streams
+                    }
+                    None => {
+                        eprintln!(
+                            "No playable streams for {} {}.",
+                            resolved.anime.title,
+                            episode_label(playback_episode.number)
+                        );
+                        continue;
+                    }
+                }
+            }
+        };
+        mark_provider_healthy(resolved.provider.id());
         let Some(stream) = best_stream(&streams, quality, &default_quality) else {
             eprintln!(
                 "No playable streams for {} {:?}.",
-                resolved.anime.title, episode.number
+                resolved.anime.title, playback_episode.number
             );
             continue;
         };
@@ -167,19 +293,32 @@ pub async fn run(
         let title = format!(
             "{} - {}",
             resolved.anime.title,
-            episode_label(episode.number)
+            episode_label(playback_episode.number)
         );
 
-        let subtitles = download_subtitles(&engine, stream, &title).await?;
+        // Windows mpv cannot read Linux temp paths. Pass subtitle URLs
+        // directly instead of downloading files it cannot open.
+        let mut subtitle_args = Vec::new();
+        let subtitles = if windows_mpv {
+            subtitle_args.extend(
+                preferred_subtitles(&stream.subtitles, 4)
+                    .into_iter()
+                    .map(|subtitle| format!("--sub-file={}", subtitle.url)),
+            );
+            Vec::new()
+        } else {
+            download_subtitles(&engine, stream, &title).await?
+        };
         eprintln!(
             "Playing {} [{}] {}",
             title,
-            episode_label(episode.number),
+            episode_label(playback_episode.number),
             stream.display()
         );
 
         let mut args = config.player_args.clone();
         args.extend(extra_player_args.clone());
+        args.extend(subtitle_args);
         let headers = stream.headers.clone();
         let player_name = player_name.clone();
         let title_clone = title.clone();
@@ -199,6 +338,52 @@ pub async fn run(
         .map_err(|error| anyhow::anyhow!(error.to_string()))?;
     }
     Ok(())
+}
+
+/// If a provider returns the right title but its stream endpoint is down,
+/// try the same title on another provider before giving up. This keeps a dead
+/// flixcloud/enc-dec request from blocking playback entirely.
+async fn fallback_stream(
+    engine: &ap0dl_core::Engine,
+    title: &str,
+    current_provider: &str,
+    episode_number: f32,
+) -> Option<(Resolved, Episode, Vec<Stream>)> {
+    let hits = match tokio::time::timeout(FALLBACK_TIMEOUT, engine.search(None, title, 1, 10)).await
+    {
+        Ok(Ok(hits)) => hits,
+        _ => return None,
+    };
+    for (provider, result) in hits {
+        if provider.id() == current_provider || fuzzy_score(title, &result.title) < 0.999 {
+            continue;
+        }
+        let resolved =
+            match tokio::time::timeout(FALLBACK_TIMEOUT, engine.resolve_result(provider, result))
+                .await
+            {
+                Ok(Ok(resolved)) => resolved,
+                _ => continue,
+            };
+        let episodes =
+            match tokio::time::timeout(FALLBACK_TIMEOUT, engine.episodes(&resolved)).await {
+                Ok(Ok(episodes)) => episodes,
+                _ => continue,
+            };
+        let Some(episode) = episodes
+            .into_iter()
+            .find(|episode| (episode.number - episode_number).abs() < 0.001)
+        else {
+            continue;
+        };
+        match tokio::time::timeout(FALLBACK_TIMEOUT, engine.streams(&resolved, &episode)).await {
+            Ok(Ok(streams)) if !streams.is_empty() => {
+                return Some((resolved, episode, streams));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 async fn download_subtitles(
@@ -286,6 +471,46 @@ fn is_english(language: &str) -> bool {
 
 fn which_player(name: &str) -> bool {
     which::which(name).is_ok()
+}
+
+/// Keep recently failing providers in the results, but below healthy ones.
+fn sort_hits_by_health(hits: &mut [Hit]) {
+    hits.sort_by_key(|(provider, _)| provider_is_degraded(provider.id()));
+}
+
+fn provider_is_degraded(provider: &str) -> bool {
+    let Ok(value) = std::fs::read_to_string(health_marker(provider)) else {
+        return false;
+    };
+    let Ok(failed_at) = value.trim().parse::<u64>() else {
+        return false;
+    };
+    now_secs().saturating_sub(failed_at) < PROVIDER_FAILURE_TTL
+}
+
+fn mark_provider_degraded(provider: &str) {
+    let marker = health_marker(provider);
+    if let Some(parent) = marker.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(marker, now_secs().to_string());
+}
+
+fn mark_provider_healthy(provider: &str) {
+    let _ = std::fs::remove_file(health_marker(provider));
+}
+
+fn health_marker(provider: &str) -> PathBuf {
+    std::env::temp_dir()
+        .join("ap0dl-provider-health")
+        .join(provider)
+}
+
+fn now_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
 }
 
 #[cfg(test)]

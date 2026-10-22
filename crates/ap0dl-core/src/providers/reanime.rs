@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashSet};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use regex::Regex;
@@ -206,10 +207,17 @@ impl ReAnime {
             urlencoding::encode(&w_payload)
         );
 
-        let manifest = http
-            .get_text(&master_url, &headers(&[("Accept", "*/*")]))
-            .await
-            .ok();
+        // The parse-flixcloud endpoint is optional metadata: it gives us the
+        // resolution. Do not let a slow metadata request hold up playback.
+        let manifest = match tokio::time::timeout(
+            Duration::from_secs(3),
+            http.get_text(&master_url, &headers(&[("Accept", "*/*")])),
+        )
+        .await
+        {
+            Ok(Ok(manifest)) => Some(manifest),
+            _ => None,
+        };
         let quality = manifest.as_deref().and_then(parse_max_height);
 
         let audio = match data_type.to_ascii_lowercase().as_str() {
@@ -413,29 +421,33 @@ impl Provider for ReAnime {
                 continue;
             }
 
-            match self
-                .extract_flix_stream(
-                    http,
-                    data_link,
-                    data_type,
-                    server.server_name.as_deref().unwrap_or("flixcloud"),
-                    server.softsub,
-                )
-                .await
+            let server_name = server.server_name.as_deref().unwrap_or("flixcloud");
+            match tokio::time::timeout(
+                Duration::from_secs(7),
+                self.extract_flix_stream(http, data_link, data_type, server_name, server.softsub),
+            )
+            .await
             {
-                Ok(stream) => {
+                Ok(Ok(stream)) => {
                     let key = (stream.url.clone(), stream.audio);
                     if seen.insert(key) {
                         streams.push(stream);
                     }
                 }
-                Err(error) => {
+                Ok(Err(error)) => {
                     tracing::warn!(
-                        server = server.server_name.as_deref().unwrap_or("?"),
+                        server = server_name,
                         %error,
                         "reanime stream extraction failed"
                     );
                     last_error = Some(error);
+                }
+                Err(_) => {
+                    tracing::warn!(server = server_name, "reanime stream extraction timed out");
+                    last_error = Some(Error::provider(
+                        self.id(),
+                        format!("server {server_name} timed out"),
+                    ));
                 }
             }
         }

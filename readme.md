@@ -65,6 +65,12 @@ Live smoke tests were run on 2026-10-21. "1080p" means the provider exposed a
 | `anidb` | AniDB / Anila (`anilab2.amdapi.click`, `play.anidb.app`) | stable | live | HLS masters | **yes** — Bocchi E1: 1080p, 720p, 360p |
 | `kisskh` | KissKH (`kisskh.co`) | stable | live | HLS/CDN via public episode-key service | 720p observed (Bocchi, Frieren, Solo Leveling); source-dependent |
 
+> **2026-10-22:** Re:Anime's `enc-dec.app` Flixcloud metadata endpoint is
+> currently timing out. Search/details/episodes still work, but stream metadata
+> may be missing its resolution. `stream` detects the timeout and automatically
+> falls back to the same title on AniDB (1080p verified). Use
+> `--player mpv` to force Linux mpv on WSL; the default is Windows `mpv.exe`.
+
 The default quality is `best`, so the highest advertised stream wins. Explicit
 selectors are available:
 
@@ -168,11 +174,19 @@ completion constraint.
 for every episode. In a terminal it uses a fuzzy anime picker and then a fuzzy
 episode picker. Subtitle tracks are downloaded eagerly only for the
 default/English tracks (up to four) to keep startup fast; the player still
-receives every selected track.
+receives every selected track. If a provider's stream endpoint times out or
+returns nothing, the same title is tried on another provider that has that
+episode before the command gives up. A failed stream endpoint is remembered
+for ten minutes, so the next run puts healthy providers first and starts
+immediately instead of waiting for the same timeout again.
 
-On WSL, mpv is launched with `--vo=x11 --hwdec=no` unless `--vo` is supplied,
-avoiding the common `VK_ERROR_INITIALIZATION_FAILED` / `vo_x11_init` failure in
-software/indirect WSLg or X11 setups. Use `--player-arg=--vo=...` to override.
+On WSL, the default `player = "mpv"` resolves to Windows `mpv.exe` when it is
+available. That uses the native Windows GPU stack and avoids the laggy,
+oddly-bordered X11/WSLg window produced by Linux mpv. If `mpv.exe` is missing,
+the Linux mpv fallback uses `--vo=x11 --hwdec=no` (unless `--vo` is supplied).
+Use `--player mpv` to force Linux mpv on WSL, or `--player mpv.exe` to force
+the Windows player. Subtitle URLs are passed directly to Windows mpv because it
+cannot read Linux temporary paths.
 
 ## Downloads
 

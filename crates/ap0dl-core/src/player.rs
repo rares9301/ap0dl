@@ -25,16 +25,20 @@ pub fn launch(
 
     let mut command = std::process::Command::new(executable);
     let lower = executable.to_ascii_lowercase();
-    if lower.contains("mpv") || lower.contains("celluloid") || lower.contains("iina") {
-        command
-            .arg("--force-window=yes")
-            .arg(format!("--title={title}"));
-        // WSL often exposes a software/indirect X11 display without a usable
-        // Vulkan device. mpv's default gpu-next/Vulkan path then falls back to
-        // X11 and can abort in vo_x11_init. Use the plain X11 output for WSL
-        // unless the caller explicitly chose a video output.
-        if is_wsl() && !extra_args.iter().any(|arg| arg.starts_with("--vo")) {
+    if is_mpv_like(&lower) {
+        command.arg(format!("--force-media-title={title}"));
+        let windows = is_windows_player(executable);
+        if windows {
+            // A Windows mpv gives WSL users the native, hardware-accelerated
+            // window instead of the slow/indirect X11 path.
+            command.arg("--terminal=no");
+        } else if is_wsl() && !extra_args.iter().any(|arg| arg.starts_with("--vo")) {
+            // Fallback for systems without mpv.exe: plain X11 is more reliable
+            // than mpv's Vulkan -> vo_x11 fallback under WSL.
             command.arg("--vo=x11").arg("--hwdec=no");
+        }
+        if let Some(referrer) = headers.get("Referer") {
+            command.arg(format!("--referrer={referrer}"));
         }
         if !headers.is_empty() {
             command.arg(format!("--http-header-fields={}", header_fields(headers)));
@@ -98,7 +102,7 @@ fn headers_for_ffmpeg(headers: &BTreeMap<String, String>) -> String {
         .collect::<String>()
 }
 
-fn is_wsl() -> bool {
+pub fn is_wsl() -> bool {
     std::env::var_os("WSL_DISTRO_NAME").is_some()
         || std::env::var_os("WSL_INTEROP").is_some()
         || std::fs::read_to_string("/proc/version")
@@ -106,7 +110,21 @@ fn is_wsl() -> bool {
             .unwrap_or(false)
 }
 
+pub fn is_windows_player(name: &str) -> bool {
+    name.trim().to_ascii_lowercase().ends_with(".exe")
+}
+
+pub fn is_mpv_like(name: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    name.contains("mpv") || name.contains("celluloid") || name.contains("iina")
+}
+
 pub fn find_player() -> Option<String> {
+    // On WSL, prefer the Windows mpv. It uses the native Windows GPU stack and
+    // avoids the laggy/odd X11 window users get from Linux mpv under WSLg.
+    if is_wsl() && which::which("mpv.exe").is_ok() {
+        return Some("mpv.exe".to_string());
+    }
     ["mpv", "vlc", "celluloid", "iina", "ffplay"]
         .into_iter()
         .find(|name| which::which(name).is_ok())
@@ -122,3 +140,18 @@ pub fn prepare_subtitle_paths(paths: &[std::path::PathBuf]) -> Vec<std::path::Pa
 }
 
 pub fn _unused(_path: &Path) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recognizes_windows_mpv() {
+        assert!(is_windows_player("mpv.exe"));
+        assert!(is_windows_player(r"C:\Program Files\mpv\mpv.exe"));
+        assert!(!is_windows_player("mpv"));
+        assert!(is_mpv_like("mpv.exe"));
+        assert!(is_mpv_like("celluloid"));
+        assert!(!is_mpv_like("vlc"));
+    }
+}

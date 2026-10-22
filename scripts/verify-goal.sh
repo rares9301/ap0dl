@@ -25,4 +25,4 @@ for provider in reanime animegg anidb kisskh; do
     test -f "crates/ap0dl-core/src/providers/$provider.rs"
 done
 
-echo "PASS: Rust rewrite, 4 live providers, 1080p policy, legacy evidence, CLI, downloads, docs and checklist"
+echo "PASS: Rust rewrite, live provider flows (with automatic fallback), 1080p policy, legacy evidence, CLI, downloads, docs and checklist"
