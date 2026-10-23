@@ -129,6 +129,7 @@ version = "2.2.0"
 dependencies = [
  "anyhow",
  "ap0dl-core",
+ "ap0dl-manga",
  "clap",
  "dialoguer",
  "futures",
@@ -172,6 +173,33 @@ dependencies = [
  "which",
  "wreq",
  "wreq-util",
+]
+
+[[package]]
+name = "ap0dl-manga"
+version = "2.2.0"
+dependencies = [
+ "anyhow",
+ "ap0dl-core",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "clap",
+ "dialoguer",
+ "dirs",
+ "futures",
+ "indicatif",
+ "regex",
+ "reqwest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+ "urlencoding",
+ "which",
 ]
 
 [[package]]

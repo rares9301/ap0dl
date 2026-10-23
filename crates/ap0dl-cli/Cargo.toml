@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "Command-line interface for the ap0dl Rust engine"
 
+[features]
+default = []
+manga = ["dep:ap0dl-manga"]
+
 [[bin]]
 name = "ap0dl"
 path = "src/main.rs"
@@ -13,6 +17,9 @@ path = "src/main.rs"
 [dependencies]
 anyhow = "1"
 ap0dl-core = { path = "../ap0dl-core" }
+# Manga plugin. Off by default until it is reviewed; enable with
+# `--features manga` (or add it to `default` to ship it).
+ap0dl-manga = { path = "../ap0dl-manga", optional = true }
 clap.workspace = true
 dialoguer.workspace = true
 futures.workspace = true

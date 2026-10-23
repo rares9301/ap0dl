@@ -150,6 +150,10 @@ pub enum Command {
         #[arg(long)]
         init: bool,
     },
+
+    /// Search, read and download manga (plugin, `manga` cargo feature).
+    #[cfg(feature = "manga")]
+    Manga(ap0dl_manga::cli::MangaArgs),
 }
 
 #[tokio::main]
@@ -275,6 +279,8 @@ async fn main() -> anyhow::Result<()> {
         Command::Config { path, sample, init } => {
             commands::config::run(config, path, sample, init).await?
         }
+        #[cfg(feature = "manga")]
+        Command::Manga(args) => ap0dl_manga::cli::run(config, args).await?,
     }
 
     Ok(())

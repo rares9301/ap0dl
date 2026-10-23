@@ -16,3 +16,6 @@ ap0dl.toml
 
 # Logs
 *.log
+
+# Local build notes for in-progress work
+.build_context/

@@ -264,6 +264,22 @@ Verified live outputs:
 - AnimeToki *Cyberpunk* E01: 506,827,883-byte MKV, HEVC 1920×1080, dual AAC and
   embedded subtitle tracks.
 
+## Manga plugin (optional)
+
+Manga support is a separate crate, `crates/ap0dl-manga`, built on the same
+engine pieces and modelled on Aniyomi's manga sources. It is compiled only with
+the `manga` feature:
+
+```sh
+cargo build --release --features ap0dl-cli/manga
+ap0dl manga search "bocchi the rock"
+ap0dl manga read "mangadex:bocchi the rock"
+ap0dl manga download "mangadex:bocchi the rock" --range 1-3
+```
+
+Sources, commands, configuration and verification are documented in
+[`docs/manga.md`](docs/manga.md).
+
 ## Native Cloudflare handling
 
 `crates/ap0dl-core/src/cloudflare.rs` runs a second HTTP client built on `wreq`

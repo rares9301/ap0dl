@@ -1,0 +1,36 @@
+[package]
+name = "ap0dl-manga"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Manga plugin for ap0dl: Aniyomi-style sources, chapter reader, CBZ downloads and library"
+
+[features]
+default = ["cli"]
+# The `cli` feature exposes `ap0dl_manga::cli`, the clap subcommand the
+# ap0dl binary mounts as `ap0dl manga ...`. Library users can disable it.
+cli = ["dep:anyhow", "dep:clap", "dep:dialoguer"]
+
+[dependencies]
+anyhow = { version = "1", optional = true }
+ap0dl-core = { path = "../ap0dl-core" }
+async-trait.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+clap = { workspace = true, optional = true }
+dialoguer = { workspace = true, optional = true }
+dirs.workspace = true
+futures.workspace = true
+indicatif.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+scraper.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+url.workspace = true
+urlencoding.workspace = true
+which.workspace = true

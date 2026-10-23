@@ -1,0 +1,1 @@
+{"source":"mangadex","title":"Bocchi the Rock!","chapter_count":119,"first_chapter_pages":11,"cbz_bytes":11985247}

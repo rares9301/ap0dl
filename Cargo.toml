@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/ap0dl-core", "crates/ap0dl-cli"]
+members = ["crates/ap0dl-core", "crates/ap0dl-cli", "crates/ap0dl-manga"]
 resolver = "2"
 
 [workspace.package]
