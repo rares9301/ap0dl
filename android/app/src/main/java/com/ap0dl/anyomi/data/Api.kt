@@ -3,6 +3,9 @@ package com.ap0dl.anyomi.data
 import com.ap0dl.anyomi.Details
 import com.ap0dl.anyomi.MobileEngine
 import com.ap0dl.anyomi.Playback
+import com.ap0dl.anyomi.data.Chapter
+import com.ap0dl.anyomi.data.ScheduleWeek
+import com.ap0dl.anyomi.data.TrendingChart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -51,4 +54,17 @@ object Api {
     suspend fun removeDownload(taskId: String) = withContext(Dispatchers.IO) {
         MobileEngine.removeDownload(taskId)
     }
+
+    suspend fun trending(): TrendingChart = withContext(Dispatchers.IO) {
+        MobileEngine.trending()
+    }
+
+    suspend fun schedule(start: Long, end: Long): ScheduleWeek = withContext(Dispatchers.IO) {
+        MobileEngine.schedule(start, end)
+    }
+
+    suspend fun skipTimes(anime: Anime, episode: Episode, durationMs: Long): List<Chapter> =
+        withContext(Dispatchers.IO) {
+            MobileEngine.skipTimes(anime, episode, durationMs)
+        }
 }

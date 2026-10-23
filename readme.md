@@ -297,7 +297,7 @@ quality, audio, server, subtitle, header, HLS/direct kind, container hint and
 optional Flixcloud metadata. The picker and health/fallback logic are CLI
 modules shared by both playback and downloading.
 
-## Android app (Anyomi)
+## Android app (AP0DL)
 
 [`android/`](android) is an original Jetpack Compose app inspired by Aniyomi's
 layout and colour language. It loads the same Rust engine through
@@ -315,8 +315,7 @@ adb install -r android/app/build/outputs/apk/release/app-release.apk
 ```
 
 The packaged release used for the 2026-10-23 verification is
-`dist/Anyomi-1.0.0.apk` (18 MB, SHA-256
-`afe9622e257a291a6e46995257e61c16809c3c9fd0641076fec7016cc2952405`).
+`dist/AP0DL-1.1.0.apk` (see `sha256sum` alongside it).
 
 The release APK is minified and signed with the debug certificate so it can be
 sideloaded directly. The Gradle project is in `android/`; `local.properties`
@@ -324,9 +323,23 @@ and build outputs are intentionally ignored.
 
 App behaviour:
 
-- Aniyomi-style Home, Browse, Details, Player, Downloads and More screens. The
-  player is forced landscape and uses Media3/ExoPlayer for HLS, DASH, MP4 and
-  MKV playback.
+- Five-tab production shell: Home, Trending, Schedule, Downloads and More;
+  Browse stays reachable from Home search and source cards.
+- **AniTrendz trending**: live weekly Top Anime ranks, movement, studio, votes
+  and tap-to-search, parsed in Rust from AniTrendz's `__NEXT_DATA__` payload.
+- **Weekly schedule**: original day-by-day timeline built from AniList airing
+  schedules, converted to local time with countdowns and tap-to-search.
+- **Aniyomi-style player over Media3**: horizontal seek (0.15 s/px), left-side
+  brightness, right-side volume, 10-second double-tap zones, centre play/pause,
+  auto-hiding controls, quality/audio/subtitle sheets, next episode and a
+  clean subtitle style.
+- **Skip intro/outro**: real AniSkip ranges when a provider supplies a MAL id;
+  otherwise an Aniyomi-style `+85 s` skip button. The button stays visible while
+  the controls are hidden.
+- **Continue watching**: duration-aware progress with a circular ring and
+  minutes remaining; an episode is only complete after 95% playback.
+- **AP0DL crest**: launch icon and in-app art referencing Arch Linux, Rust,
+  DeepSeek and Politehnica Bucharest.
 - **Sub/Dub selection**: More → Audio sets the persisted default. The player's
   `AUDIO` chip re-resolves the source and preserves the current position, so you
   can switch mid-episode. Dubs are never removed. If a source only offers the
@@ -353,12 +366,14 @@ The ordered implementation checklist is in
 [`docs/goal-checklist.md`](docs/goal-checklist.md), mirrored to
 `/root/goals/ap0dl-rust-rewrite.md`. Live evidence for the Rust engine is in
 [`docs/evidence/live-smoke-2026-10-22.md`](docs/evidence/live-smoke-2026-10-22.md);
-the Android audio/release run is documented in
-[`docs/evidence/android-2026-10-23.md`](docs/evidence/android-2026-10-23.md).
+the earlier Android audio/release run is documented in
+[`docs/evidence/android-2026-10-23.md`](docs/evidence/android-2026-10-23.md), and
+the AP0DL 1.1.0 UI/player/trending/schedule verification is in
+[`docs/evidence/ap0dl-app-2026-10-23.md`](docs/evidence/ap0dl-app-2026-10-23.md).
 
 ```sh
 cargo build --workspace
-cargo test --workspace           # 63 passed
+cargo test --workspace           # 67 passed
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ./scripts/verify-improvements.sh

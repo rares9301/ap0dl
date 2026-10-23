@@ -12,6 +12,7 @@
 //! - [`proxy`] serves decrypted flixcloud playlists and segments locally.
 
 pub mod aniskip;
+pub mod anitrendz;
 pub mod cloudflare;
 pub mod config;
 pub mod download;
@@ -27,6 +28,7 @@ pub mod providers;
 pub mod proxy;
 pub mod quality;
 pub mod ranges;
+pub mod schedule;
 pub mod util;
 
 pub use config::Config;

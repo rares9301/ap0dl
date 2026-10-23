@@ -11,6 +11,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use ap0dl_core::aniskip;
+use ap0dl_core::anitrendz;
 use ap0dl_core::config::Config;
 use ap0dl_core::download::{DownloadOptions, DownloadProgress, ProgressCallback, download_episode};
 use ap0dl_core::models::{Anime, Audio, Chapter, Episode, SearchResult, StreamKind, Subtitle};
@@ -20,7 +22,7 @@ use ap0dl_core::quality;
 use ap0dl_core::{Engine, Error};
 use jni::JNIEnv;
 use jni::objects::{JObject, JString};
-use jni::sys::{jint, jstring};
+use jni::sys::{jint, jlong, jstring};
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -487,6 +489,77 @@ pub extern "system" fn Java_com_ap0dl_anyomi_MobileEngine_nativeStreams(
             proxied: selected.flix.is_some() || selected.url.contains("cloud.animetoki.com"),
             mime_type: mime_for(&selected),
         }))
+    })()
+    .unwrap_or_else(json_error);
+    to_jstring(&mut env, response)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_ap0dl_anyomi_MobileEngine_nativeTrending(
+    mut env: JNIEnv,
+    _this: JObject,
+) -> jstring {
+    let response = (|| {
+        let engine = engine()?;
+        let runtime = runtime()?;
+        let chart = runtime
+            .block_on(anitrendz::fetch(&engine.http))
+            .map_err(|error| error.to_string())?;
+        Ok::<_, String>(json_ok(chart))
+    })()
+    .unwrap_or_else(json_error);
+    to_jstring(&mut env, response)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_ap0dl_anyomi_MobileEngine_nativeSchedule(
+    mut env: JNIEnv,
+    _this: JObject,
+    start: jlong,
+    end: jlong,
+) -> jstring {
+    let response = (|| {
+        let engine = engine()?;
+        let runtime = runtime()?;
+        let week = runtime
+            .block_on(ap0dl_core::schedule::fetch(&engine.http, start, end))
+            .map_err(|error| error.to_string())?;
+        Ok::<_, String>(json_ok(week))
+    })()
+    .unwrap_or_else(json_error);
+    to_jstring(&mut env, response)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_ap0dl_anyomi_MobileEngine_nativeSkipTimes(
+    mut env: JNIEnv,
+    _this: JObject,
+    anime_json: JString,
+    episode_json: JString,
+    duration_ms: jlong,
+) -> jstring {
+    let response = (|| {
+        let anime_json = required_string(&mut env, &anime_json)?;
+        let episode_json = required_string(&mut env, &episode_json)?;
+        let anime: Anime = serde_json::from_str(&anime_json)
+            .map_err(|error| format!("invalid anime payload: {error}"))?;
+        let episode: Episode = serde_json::from_str(&episode_json)
+            .map_err(|error| format!("invalid episode payload: {error}"))?;
+        let Some(mal_id) = anime.mal_id.filter(|value| *value > 0) else {
+            return Ok::<_, String>(json_ok(Vec::<Chapter>::new()));
+        };
+        let engine = engine()?;
+        let runtime = runtime()?;
+        let length = duration_ms.max(0) as f64 / 1000.0;
+        let chapters = runtime
+            .block_on(aniskip::skip_times(
+                &engine.http,
+                mal_id,
+                episode.number,
+                length,
+            ))
+            .map_err(|error| error.to_string())?;
+        Ok::<_, String>(json_ok(chapters))
     })()
     .unwrap_or_else(json_error);
     to_jstring(&mut env, response)

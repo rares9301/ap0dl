@@ -140,3 +140,58 @@ data class DownloadStatus(
 data class TaskId(
     @SerialName("task_id") val taskId: String = "",
 )
+
+@Serializable
+data class TrendingChart(
+    val title: String = "Top Anime",
+    val slug: String = "top-anime",
+    val week: String = "",
+    val season: String = "",
+    val date: String = "",
+    val votes: Long = 0L,
+    val entries: List<TrendingEntry> = emptyList(),
+    @SerialName("fetched_from") val fetchedFrom: String = "",
+)
+
+@Serializable
+data class TrendingEntry(
+    val rank: Int = 0,
+    val title: String = "",
+    @SerialName("alt_title") val altTitle: String? = null,
+    val cover: String? = null,
+    val studio: String? = null,
+    val tag: String? = null,
+    val votes: Long? = null,
+    val previous: Int? = null,
+    val peak: Int? = null,
+    @SerialName("weeks_on_chart") val weeksOnChart: Int? = null,
+    val uid: String? = null,
+) {
+    /** Positive is upward movement; null means this is a new entry. */
+    val movement: Int?
+        get() = previous?.takeIf { it > 0 }?.let { it - rank }
+
+    val isNew: Boolean
+        get() = previous == null || previous == 0
+}
+
+@Serializable
+data class ScheduleWeek(
+    val start: Long = 0L,
+    val end: Long = 0L,
+    val entries: List<ScheduleEntry> = emptyList(),
+)
+
+@Serializable
+data class ScheduleEntry(
+    val id: Long = 0L,
+    val title: String = "",
+    @SerialName("native_title") val nativeTitle: String? = null,
+    val cover: String? = null,
+    val episode: Int = 0,
+    @SerialName("airing_at") val airingAt: Long = 0L,
+    val format: String? = null,
+    val status: String? = null,
+    @SerialName("site_url") val siteUrl: String? = null,
+    val genres: List<String> = emptyList(),
+)

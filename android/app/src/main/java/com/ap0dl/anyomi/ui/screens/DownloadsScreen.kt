@@ -113,7 +113,11 @@ fun DownloadsScreen(
                         letterSpacing = 2.sp,
                     )
                     Text(
-                        "Offline, no signal.",
+                        if (local.isEmpty() && active.isEmpty()) {
+                            "Downloads"
+                        } else {
+                            "Ready offline"
+                        },
                         color = Paper,
                         style = MaterialTheme.typography.headlineLarge,
                     )
@@ -167,7 +171,7 @@ fun DownloadsScreen(
             item {
                 SectionHeading(
                     title = "In progress",
-                    eyebrow = "Native Rust downloader",
+                    eyebrow = "Active downloads",
                     modifier = Modifier.padding(horizontal = 20.dp).padding(top = 12.dp),
                 )
                 Spacer(Modifier.height(8.dp))
@@ -178,7 +182,7 @@ fun DownloadsScreen(
         }
         item {
             SectionHeading(
-                title = "Ready offline",
+                title = if (local.isEmpty()) "Saved episodes" else "On this device",
                 eyebrow = if (local.isEmpty()) "Your saved episodes" else "${local.size} episodes · ${Formatter.formatShortFileSize(context, totalBytes)}",
                 action = if (local.isEmpty()) null else "Refresh",
                 onAction = { app.refreshDownloads() },
@@ -212,7 +216,7 @@ fun DownloadsScreen(
         item {
             Spacer(Modifier.height(16.dp))
             Text(
-                "Files are stored privately in Anyomi's app storage. HLS episodes are saved as MPEG-TS because Android does not bundle ffmpeg for remuxing.",
+                "Downloads stay in AP0DL's private app storage and play without a connection.",
                 modifier = Modifier.padding(horizontal = 20.dp),
                 color = Muted.copy(alpha = 0.65f),
                 style = MaterialTheme.typography.bodySmall,

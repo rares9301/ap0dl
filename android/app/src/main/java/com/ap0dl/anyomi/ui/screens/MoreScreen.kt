@@ -1,9 +1,11 @@
 package com.ap0dl.anyomi.ui.screens
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -37,12 +39,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.ap0dl.anyomi.AppViewModel
 import com.ap0dl.anyomi.BuildConfig
+import com.ap0dl.anyomi.R
 import com.ap0dl.anyomi.data.Loadable
 import com.ap0dl.anyomi.ui.components.LogoMark
 import com.ap0dl.anyomi.ui.components.ProviderRow
@@ -75,7 +80,7 @@ fun MoreScreen(app: AppViewModel) {
                     letterSpacing = 2.sp,
                 )
                 Text(
-                    "The engine room.",
+                    "Settings",
                     color = Paper,
                     style = MaterialTheme.typography.headlineLarge,
                 )
@@ -100,9 +105,11 @@ fun MoreScreen(app: AppViewModel) {
                         LogoMark(size = 56)
                         Column(Modifier.weight(1f)) {
                             Text(
-                                "Anyomi",
+                                "AP0DL",
                                 color = Paper,
                                 style = MaterialTheme.typography.headlineSmall,
+                                letterSpacing = 1.2.sp,
+                                fontWeight = FontWeight.Black,
                             )
                             Text(
                                 "Version ${BuildConfig.VERSION_NAME} · Android",
@@ -111,7 +118,9 @@ fun MoreScreen(app: AppViewModel) {
                             )
                             Spacer(Modifier.height(3.dp))
                             Text(
-                                "Native Rust media engine",
+                                (providers as? Loadable.Ready)?.value?.size
+                                    ?.let { "$it live sources" }
+                                    ?: "Live sources",
                                 color = Ice,
                                 style = MaterialTheme.typography.labelMedium,
                             )
@@ -208,6 +217,55 @@ fun MoreScreen(app: AppViewModel) {
         }
         item {
             Column(Modifier.padding(horizontal = 20.dp).padding(top = 26.dp)) {
+                SectionHeading(title = "Team", eyebrow = "Who built this")
+                Spacer(Modifier.height(10.dp))
+                Surface(
+                    color = NightCard.copy(alpha = 0.62f),
+                    shape = RoundedCornerShape(20.dp),
+                    border = BorderStroke(1.dp, NightLine.copy(alpha = 0.6f)),
+                ) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 3.dp)) {
+                        TeamRow(
+                            initials = "RS",
+                            name = "Rares-Andrei Sarmasag",
+                            handle = "@rares9301",
+                            role = "Product & app",
+                            accent = Ice,
+                        )
+                        MemberDivider()
+                        TeamRow(
+                            initials = "VI",
+                            name = "Victor Iusco",
+                            handle = "@Victor-Iusco",
+                            role = "Android & UI",
+                            accent = Mint,
+                        )
+                        MemberDivider()
+                        TeamRow(
+                            initials = "DS",
+                            name = "DeepSeek V4.1 Flash",
+                            handle = "release 1051",
+                            role = "Rust engine & implementation",
+                            accent = Color(0xFF8FB4FF),
+                        )
+                        MemberDivider()
+                        TeamRow(
+                            initials = "CO",
+                            name = "Claude Opus 5.5",
+                            handle = "Anthropic",
+                            role = "Design & code review",
+                            accent = Color(0xFFC5A6FF),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(22.dp))
+                BuiltWithCard()
+                Spacer(Modifier.height(12.dp))
+                TokenCard()
+            }
+        }
+        item {
+            Column(Modifier.padding(horizontal = 20.dp).padding(top = 26.dp)) {
                 SectionHeading(title = "Watch history", eyebrow = "Stored on this device")
                 Spacer(Modifier.height(10.dp))
                 Surface(
@@ -259,42 +317,14 @@ fun MoreScreen(app: AppViewModel) {
         }
         item {
             Column(Modifier.padding(horizontal = 20.dp).padding(top = 26.dp)) {
-                Surface(
-                    color = Mint.copy(alpha = 0.07f),
-                    shape = RoundedCornerShape(18.dp),
-                    border = BorderStroke(1.dp, Mint.copy(alpha = 0.15f)),
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            Icon(
-                                Icons.Rounded.Refresh,
-                                contentDescription = null,
-                                tint = Mint,
-                                modifier = Modifier.size(17.dp),
-                            )
-                            Text(
-                                "LIVE, NOT SCRAPED IN ADVANCE",
-                                color = Mint,
-                                style = MaterialTheme.typography.labelSmall,
-                                letterSpacing = 0.8.sp,
-                            )
-                        }
-                        Text(
-                            "Every search, episode list and stream URL is resolved on demand by the Rust engine. If one source is down, the others remain searchable.",
-                            color = Muted,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
-                Spacer(Modifier.height(18.dp))
                 Text(
-                    "Anyomi does not host or upload video. All media is resolved from third-party providers and remains their responsibility. Use this app only where the content is legal for you to access.",
+                    "AP0DL does not host or upload video. All media is resolved from third-party providers and remains their responsibility. Use this app only where the content is legal for you to access.",
                     color = Muted.copy(alpha = 0.72f),
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Spacer(Modifier.height(18.dp))
                 Text(
-                    "ANYOMI · MADE WITH A RUST HEART",
+                    "AP0DL · MADE WITH A RUST HEART",
                     color = Muted.copy(alpha = 0.45f),
                     style = MaterialTheme.typography.labelSmall,
                     letterSpacing = 1.1.sp,
@@ -321,6 +351,169 @@ fun MoreScreen(app: AppViewModel) {
             },
             containerColor = NightCard,
         )
+    }
+}
+
+@Composable
+private fun TeamRow(
+    initials: String,
+    name: String,
+    handle: String,
+    role: String,
+    accent: Color,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(11.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(38.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(accent.copy(alpha = 0.13f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                initials,
+                color = accent,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Black,
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                name,
+                color = Paper,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+            )
+            Text(
+                "$role · $handle",
+                color = Muted,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MemberDivider() {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(NightLine.copy(alpha = 0.5f)),
+    )
+}
+
+@Composable
+private fun BuiltWithCard() {
+    Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, Ice.copy(alpha = 0.16f)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF101A2C), Color(0xFF141722)),
+                    ),
+                )
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(82.dp)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color(0xFF0B1220)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(R.drawable.ic_launcher_foreground),
+                    contentDescription = "AP0DL crest",
+                    modifier = Modifier.size(74.dp),
+                    contentScale = ContentScale.Fit,
+                )
+            }
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "AP0DL crest",
+                    color = Paper,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "Arch Linux · Rust · DeepSeek V4.1 Flash · Politehnica Bucharest",
+                    color = Muted,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(5.dp))
+                Text(
+                    "One player. Four influences.",
+                    color = Ice,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun TokenCard() {
+    Surface(
+        color = Color.Transparent,
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, Color(0xFF6E5AA8).copy(alpha = 0.38f)),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF2A2345), Color(0xFF141722)),
+                    ),
+                )
+                .padding(18.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "TOKENS INCINERATED",
+                    color = Color(0xFFC5A6FF),
+                    style = MaterialTheme.typography.labelSmall,
+                    letterSpacing = 1.3.sp,
+                )
+                Text("✦", color = Mint, style = MaterialTheme.typography.titleMedium)
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "294M",
+                color = Paper,
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.Black,
+            )
+            Text(
+                "tokens spent building AP0DL",
+                color = Muted,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "Enough context to rewrite the app twice. We only did it once. :)",
+                color = Color(0xFFC5A6FF).copy(alpha = 0.8f),
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
     }
 }
 

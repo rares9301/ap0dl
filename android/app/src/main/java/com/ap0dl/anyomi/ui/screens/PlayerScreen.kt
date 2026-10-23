@@ -4,7 +4,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.content.res.Configuration
+import android.media.AudioManager
 import android.net.Uri
+import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
@@ -15,6 +18,9 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -33,24 +40,35 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Brightness6
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.ClosedCaption
+import androidx.compose.material.icons.rounded.Forward10
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.FullscreenExit
 import androidx.compose.material.icons.rounded.HighQuality
+import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Replay10
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +79,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -94,6 +114,7 @@ import androidx.media3.exoplayer.text.TextRenderer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.CaptionStyleCompat
 import androidx.media3.ui.PlayerView
 import com.ap0dl.anyomi.AppViewModel
 import com.ap0dl.anyomi.Playback
@@ -114,6 +135,8 @@ import com.ap0dl.anyomi.ui.theme.Mint
 import com.ap0dl.anyomi.ui.theme.Muted
 import com.ap0dl.anyomi.ui.theme.Night
 import com.ap0dl.anyomi.ui.theme.Paper
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 import java.io.File
 
@@ -133,22 +156,65 @@ fun PlayerScreen(
     val context = LocalContext.current
     val activity = context.findActivity()
     val view = LocalView.current
+    val window = activity?.window
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val audioManager = remember {
+        context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
     val anime = request.anime
     val episode = request.episode
+
     var qualitySpec by remember(anime.url) { mutableStateOf<String?>(null) }
     var audioSpec by remember(anime.url) { mutableStateOf(app.audioPreference.value) }
     var streamState by remember(anime.url) { mutableStateOf<StreamState>(StreamState.Loading) }
     var playerError by remember(anime.url) { mutableStateOf<String?>(null) }
     var refreshAttempt by remember(anime.url) { mutableIntStateOf(0) }
     var controlsVisible by remember { mutableStateOf(true) }
+    var centerControlsEnabled by remember { mutableStateOf(false) }
     var ended by remember { mutableStateOf(false) }
     var showQuality by remember { mutableStateOf(false) }
     var showAudio by remember { mutableStateOf(false) }
     var activeAudioTrack by remember(anime.url) { mutableStateOf<String?>(null) }
     var showSubtitleInfo by remember { mutableStateOf(false) }
     var queue by remember(anime.url) { mutableStateOf(request.episodes.sortedBy { it.number }) }
+    var isPlaying by remember { mutableStateOf(false) }
+    var buffering by remember { mutableStateOf(true) }
+    var positionMs by remember { mutableStateOf(0L) }
+    var durationMs by remember { mutableStateOf(0L) }
+    var scrubPosition by remember { mutableStateOf<Float?>(null) }
+    var hud by remember { mutableStateOf<PlayerHud?>(null) }
+    var hudKey by remember { mutableIntStateOf(0) }
+    var skipRanges by remember(anime.url, episode.id) {
+        mutableStateOf<List<com.ap0dl.anyomi.data.Chapter>>(emptyList())
+    }
+    var skipRequestedKey by remember(anime.url, episode.id) { mutableStateOf<String?>(null) }
+
     val history by app.history.collectAsStateWithLifecycle()
     val currentEpisode by rememberUpdatedState(episode)
+
+    val maxVolume = remember {
+        audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+    }
+    val initialBrightness = remember {
+        window?.attributes?.screenBrightness?.takeIf { it >= 0f }
+            ?: runCatching {
+                Settings.System.getInt(
+                    context.contentResolver,
+                    Settings.System.SCREEN_BRIGHTNESS,
+                    128,
+                ) / 255f
+            }.getOrDefault(0.5f)
+    }
+    var brightness by remember { mutableFloatStateOf(initialBrightness.coerceIn(0.05f, 1f)) }
+    var volume by remember {
+        mutableFloatStateOf(
+            (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() / maxVolume)
+                .coerceIn(0f, 1f),
+        )
+    }
+    val brightnessNow = rememberUpdatedState(brightness)
+    val volumeNow = rememberUpdatedState(volume)
 
     val trackSelector = remember(anime.url) { DefaultTrackSelector(context) }
     val player = remember(anime.url) {
@@ -176,7 +242,7 @@ fun PlayerScreen(
     }
 
     // Dual-audio files expose both tracks inside one stream. Tell ExoPlayer
-// which one to prefer so the Sub/Dub choice still applies there.
+    // which one to prefer so the Sub/Dub choice still applies there.
     LaunchedEffect(trackSelector, audioSpec) {
         val language = if (audioSpec == "dub") "en" else "ja"
         trackSelector.parameters = trackSelector.parameters.buildUpon()
@@ -189,22 +255,27 @@ fun PlayerScreen(
     val resumePosition = remember(anime.url, episode.id) {
         history.firstOrNull {
             it.anime.url == anime.url && it.episode.number == episode.number
-        }?.takeIf { it.progress < 0.96f }?.positionMs ?: 0L
+        }?.takeIf { !it.completed }?.positionMs ?: 0L
     }
     var loadedEpisodeId by remember(anime.url) { mutableStateOf<String?>(null) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
+                buffering = playbackState == Player.STATE_BUFFERING
                 if (playbackState == Player.STATE_ENDED) {
                     ended = true
                     controlsVisible = true
                     val duration = player.duration.coerceAtLeast(0L)
-                    app.updateProgress(anime, currentEpisode, duration, duration)
+                    if (duration > 0L) {
+                        positionMs = duration
+                        app.updateProgress(anime, currentEpisode, duration, duration)
+                    }
                 }
             }
 
             override fun onPlayerError(error: PlaybackException) {
+                buffering = false
                 val detail = error.message.orEmpty()
                 playerError = if (
                     detail.contains("unexpected end of stream", ignoreCase = true) ||
@@ -218,8 +289,9 @@ fun PlayerScreen(
                 controlsVisible = true
             }
 
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) ended = false
+            override fun onIsPlayingChanged(playing: Boolean) {
+                isPlaying = playing
+                if (playing) ended = false else controlsVisible = true
             }
 
             override fun onTracksChanged(tracks: Tracks) {
@@ -357,6 +429,20 @@ fun PlayerScreen(
         playerError = null
     }
 
+    // Smooth 2 Hz updates for the scrubber and HUD without writing history
+    // on every frame.
+    LaunchedEffect(player) {
+        while (true) {
+            durationMs = player.duration.coerceAtLeast(0L)
+            if (scrubPosition == null) {
+                positionMs = player.currentPosition.coerceAtLeast(0L)
+            }
+            isPlaying = player.isPlaying
+            delay(500)
+        }
+    }
+
+    // Persist a real position every five seconds while playing.
     LaunchedEffect(player, episode.id) {
         while (true) {
             delay(5_000)
@@ -370,38 +456,118 @@ fun PlayerScreen(
         }
     }
 
+    // Skip ranges are only fetched once per episode/stream duration. Sources
+    // without a MAL id fall through to the Aniyomi-style +85s button.
+    LaunchedEffect(anime.url, episode.id, durationMs, readyPlayback?.url) {
+        val playback = readyPlayback ?: return@LaunchedEffect
+        if (durationMs <= 0L) return@LaunchedEffect
+        val key = "${playback.url}:${durationMs / 1000L}"
+        if (skipRequestedKey == key) return@LaunchedEffect
+        skipRequestedKey = key
+        skipRanges = runCatching { Api.skipTimes(anime, episode, durationMs) }
+            .getOrDefault(emptyList())
+    }
+
+    LaunchedEffect(controlsVisible) {
+        if (controlsVisible) {
+            // A tap that reveals the controls must not also press the centre
+            // play button underneath the same finger.
+            delay(300)
+            centerControlsEnabled = true
+        } else {
+            centerControlsEnabled = false
+        }
+    }
+
+    LaunchedEffect(controlsVisible, isPlaying, showQuality, showAudio, showSubtitleInfo, ended, hudKey) {
+        if (
+            controlsVisible && isPlaying && !ended &&
+            !showQuality && !showAudio && !showSubtitleInfo && hud == null
+        ) {
+            delay(4_200)
+            controlsVisible = false
+        }
+    }
+
+    LaunchedEffect(hudKey) {
+        if (hud != null) {
+            delay(1_000)
+            hud = null
+        }
+    }
+
     DisposableEffect(Unit) {
         view.keepScreenOn = true
-        val window = activity?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
         controller?.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         controller?.hide(WindowInsetsCompat.Type.systemBars())
         val previousOrientation = activity?.requestedOrientation
+        val previousBrightness = window?.attributes?.screenBrightness ?: -1f
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         onDispose {
             view.keepScreenOn = false
             controller?.show(WindowInsetsCompat.Type.systemBars())
+            if (window != null) {
+                val attributes = window.attributes
+                attributes.screenBrightness = previousBrightness
+                window.attributes = attributes
+            }
             if (activity != null && previousOrientation != null) {
                 activity.requestedOrientation = previousOrientation
             }
         }
     }
 
-    fun back() {
+    fun persistAndBack() {
         val duration = player.duration.coerceAtLeast(0L)
         val position = player.currentPosition.coerceAtLeast(0L)
         if (position > 0L) app.updateProgress(anime, episode, position, duration)
         onBack()
     }
 
-    BackHandler {
-        back()
+    fun seekBy(deltaMs: Long) {
+        val duration = player.duration.coerceAtLeast(0L)
+        if (duration <= 0L) return
+        val start = player.currentPosition.coerceAtLeast(0L)
+        val target = (start + deltaMs).coerceIn(0L, duration)
+        player.seekTo(target)
+        positionMs = target
+        hud = PlayerHud.Seek(target, target - start)
+        hudKey++
     }
+
+    fun seekTo(targetMs: Long) {
+        val duration = player.duration.coerceAtLeast(0L)
+        if (duration <= 0L) return
+        val target = targetMs.coerceIn(0L, duration)
+        player.seekTo(target)
+        positionMs = target
+    }
+
+    BackHandler { persistAndBack() }
 
     val nextEpisode = remember(queue, episode.id) {
         val index = queue.indexOfFirst { it.id == episode.id || it.number == episode.number }
         if (index >= 0) queue.getOrNull(index + 1) else null
+    }
+
+    val positionSeconds = positionMs / 1000.0
+    val opRange = skipRanges.firstOrNull { it.title.contains("OP", ignoreCase = true) }
+    val edRange = skipRanges.firstOrNull { it.title.contains("ED", ignoreCase = true) }
+    val activeOp = opRange?.takeIf {
+        positionSeconds >= it.start - 3.0 && positionSeconds <= it.end
+    }
+    val activeEd = edRange?.takeIf {
+        positionSeconds >= it.start - 3.0 && positionSeconds <= it.end
+    }
+    val skipAction: Pair<String, Long>? = when {
+        activeOp != null -> "Skip intro" to (activeOp.end * 1000).toLong()
+        activeEd != null -> "Skip outro" to (activeEd.end * 1000).toLong()
+        opRange == null && edRange == null && durationMs > 300_000L &&
+            positionSeconds in 1.0..95.0 ->
+            "Skip intro" to (positionMs + 85_000L).coerceAtMost(durationMs)
+        else -> null
     }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
@@ -413,25 +579,146 @@ fun PlayerScreen(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                     )
                     this.player = player
-                    useController = true
-                    controllerAutoShow = true
-                    controllerShowTimeoutMs = 3_500
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                    useController = false
+                    controllerAutoShow = false
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     setKeepContentOnPlayerReset(true)
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     setBackgroundColor(android.graphics.Color.BLACK)
-                    setControllerVisibilityListener(
-                        PlayerView.ControllerVisibilityListener { visibility ->
-                            controlsVisible = visibility == View.VISIBLE
-                        },
-                    )
+                    subtitleView?.apply {
+                        setStyle(
+                            CaptionStyleCompat(
+                                android.graphics.Color.WHITE,
+                                android.graphics.Color.argb(120, 0, 0, 0),
+                                android.graphics.Color.TRANSPARENT,
+                                CaptionStyleCompat.EDGE_TYPE_OUTLINE,
+                                android.graphics.Color.BLACK,
+                                null,
+                            ),
+                        )
+                        setFractionalTextSize(0.038f)
+                        setBottomPaddingFraction(0.08f)
+                    }
                 }
             },
             update = { playerView ->
                 playerView.player = player
-                if (ended) playerView.showController()
             },
             modifier = Modifier.fillMaxSize(),
+        )
+
+        // Gesture surface. Controls are drawn later, so their buttons win hit
+        // testing; everything else gets Aniyomi-style seek/brightness/volume.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .pointerInput(player) {
+                    var startPosition = 0L
+                    var startX = 0f
+                    var pendingSeekTarget: Long? = null
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            startPosition = player.currentPosition.coerceAtLeast(0L)
+                            startX = offset.x
+                            pendingSeekTarget = null
+                            controlsVisible = false
+                        },
+                        onDragEnd = {
+                            pendingSeekTarget?.let { target ->
+                                player.seekTo(target)
+                                positionMs = target
+                                hud = PlayerHud.Seek(target, target - startPosition)
+                                hudKey++
+                            }
+                            pendingSeekTarget = null
+                        },
+                        onDragCancel = { pendingSeekTarget = null },
+                    ) { change, _ ->
+                        val duration = player.duration.coerceAtLeast(0L)
+                        if (duration > 0L) {
+                            // Aniyomi's horizontal gesture: 0.15 seconds per pixel.
+                            val delta = ((change.position.x - startX) * 150f).toLong()
+                            val target = (startPosition + delta).coerceIn(0L, duration)
+                            pendingSeekTarget = target
+                            hud = PlayerHud.Seek(target, target - startPosition)
+                            hudKey++
+                        }
+                        change.consume()
+                    }
+                }
+                .pointerInput(player) {
+                    var startY = 0f
+                    var leftSide = true
+                    var startBrightness = brightnessNow.value
+                    var startVolume = volumeNow.value
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            startY = offset.y
+                            leftSide = offset.x < size.width / 2f
+                            startBrightness = window?.attributes?.screenBrightness
+                                ?.takeIf { it >= 0f } ?: brightnessNow.value
+                            startVolume = audioManager
+                                .getStreamVolume(AudioManager.STREAM_MUSIC)
+                                .toFloat() / maxVolume
+                            controlsVisible = false
+                        },
+                        onDragEnd = {},
+                        onDragCancel = {},
+                    ) { change, _ ->
+                        val delta = -(change.position.y - startY) * 0.001f
+                        if (leftSide) {
+                            val next = (startBrightness + delta).coerceIn(0.05f, 1f)
+                            brightness = next
+                            window?.let { targetWindow ->
+                                val attributes = targetWindow.attributes
+                                attributes.screenBrightness = next
+                                targetWindow.attributes = attributes
+                            }
+                            hud = PlayerHud.Brightness(next)
+                        } else {
+                            val next = (startVolume + delta).coerceIn(0f, 1f)
+                            volume = next
+                            audioManager.setStreamVolume(
+                                AudioManager.STREAM_MUSIC,
+                                (next * maxVolume).roundToInt(),
+                                0,
+                            )
+                            hud = PlayerHud.Volume(next)
+                        }
+                        hudKey++
+                        change.consume()
+                    }
+                }
+                .pointerInput(player) {
+                    detectTapGestures(
+                        onTap = { controlsVisible = !controlsVisible },
+                        onDoubleTap = { offset ->
+                            val duration = player.duration.coerceAtLeast(0L)
+                            when {
+                                offset.x < size.width * 2f / 5f && duration > 0L -> {
+                                    val start = player.currentPosition.coerceAtLeast(0L)
+                                    val target = (start - 10_000L).coerceIn(0L, duration)
+                                    player.seekTo(target)
+                                    positionMs = target
+                                    hud = PlayerHud.DoubleTap(forward = false, targetMs = target)
+                                    hudKey++
+                                }
+                                offset.x > size.width * 3f / 5f && duration > 0L -> {
+                                    val start = player.currentPosition.coerceAtLeast(0L)
+                                    val target = (start + 10_000L).coerceIn(0L, duration)
+                                    player.seekTo(target)
+                                    positionMs = target
+                                    hud = PlayerHud.DoubleTap(forward = true, targetMs = target)
+                                    hudKey++
+                                }
+                                else -> {
+                                    if (player.isPlaying) player.pause() else player.play()
+                                    controlsVisible = true
+                                }
+                            }
+                        },
+                    )
+                },
         )
 
         val state = streamState
@@ -442,7 +729,7 @@ fun PlayerScreen(
             StreamFailureOverlay(
                 message = state.message,
                 onRetry = { refreshAttempt++ },
-                onBack = { back() },
+                onBack = { persistAndBack() },
             )
         }
         if (playerError != null) {
@@ -453,131 +740,94 @@ fun PlayerScreen(
                     loadedEpisodeId = null
                     refreshAttempt++
                 },
-                onBack = { back() },
+                onBack = { persistAndBack() },
                 retryLabel = "Resolve again",
             )
         }
 
+        if (state is StreamState.Ready && !ended && playerError == null && buffering) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center).size(34.dp),
+                color = Color.White,
+                strokeWidth = 3.dp,
+            )
+        }
+
         AnimatedVisibility(
-            visible = controlsVisible && state is StreamState.Ready && playerError == null,
+            visible = controlsVisible && state is StreamState.Ready && playerError == null && !ended,
             enter = fadeIn(),
             exit = fadeOut(),
         ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color(0xCC000000), Color(0x55000000), Color.Transparent),
-                        ),
-                    )
-                    .statusBarsPadding()
-                    .padding(horizontal = 10.dp, vertical = 8.dp),
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    IconButton(onClick = { back() }) {
-                        Icon(
-                            Icons.AutoMirrored.Rounded.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White,
-                        )
-                    }
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            anime.title,
-                            color = Color.White,
-                            style = MaterialTheme.typography.titleMedium,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            episode.displayTitle(),
-                            color = Color.White.copy(alpha = 0.66f),
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    val playback = (state as? StreamState.Ready)?.playback
-                    if (playback != null && request.localPath == null) {
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .clickable { showAudio = true },
-                            color = Color.White.copy(alpha = 0.11f),
-                            shape = RoundedCornerShape(50),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            ) {
-                                Icon(
-                                    Icons.Rounded.Translate,
-                                    contentDescription = null,
-                                    tint = if (playback.audioFallback) Amber else Ice,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Text(
-                                    audioChipLabel(
-                                        playback.requestedAudio,
-                                        playback.audio,
-                                        playback.audioFallback,
-                                    ),
-                                    color = if (playback.audioFallback) Amber else Ice,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
+            Box(Modifier.fillMaxSize()) {
+                PlayerTopBar(
+                    anime = anime,
+                    episode = episode,
+                    onBack = { persistAndBack() },
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+                PlayerCenterControls(
+                    isPlaying = isPlaying,
+                    enabled = centerControlsEnabled,
+                    onPlayPause = {
+                        if (player.isPlaying) player.pause() else player.play()
+                        controlsVisible = true
+                    },
+                    modifier = Modifier.align(Alignment.Center),
+                )
+                PlayerBottomControls(
+                    positionMs = scrubPosition?.toLong() ?: positionMs,
+                    durationMs = durationMs,
+                    playback = (state as? StreamState.Ready)?.playback,
+                    hasNext = nextEpisode != null,
+                    isLandscape = isLandscape,
+                    onScrub = { scrubPosition = it },
+                    onScrubFinished = {
+                        scrubPosition?.let { seekTo(it.toLong()) }
+                        scrubPosition = null
+                        controlsVisible = true
+                    },
+                    onReplay = { seekBy(-10_000L) },
+                    onForward = { seekBy(10_000L) },
+                    onNext = nextEpisode?.let { next ->
+                        {
+                            ended = false
+                            app.play(anime, next, queue)
                         }
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .clickable { showQuality = true },
-                            color = Color.White.copy(alpha = 0.11f),
-                            shape = RoundedCornerShape(50),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                            ) {
-                                Icon(
-                                    Icons.Rounded.HighQuality,
-                                    contentDescription = null,
-                                    tint = Ice,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Text(
-                                    playback.quality?.let { "${it}p" } ?: "AUTO",
-                                    color = Ice,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
+                    },
+                    onAudio = { showAudio = true },
+                    onQuality = { showQuality = true },
+                    onSubtitles = { showSubtitleInfo = true },
+                    onFullscreen = {
+                        activity?.requestedOrientation = if (isLandscape) {
+                            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                        } else {
+                            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
                         }
-                        if (playback.subtitles.isNotEmpty()) {
-                            Surface(
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(50))
-                                    .clickable { showSubtitleInfo = true },
-                                color = Color.White.copy(alpha = 0.11f),
-                                shape = RoundedCornerShape(50),
-                            ) {
-                                Text(
-                                    "CC",
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
-                        }
-                    }
-                }
+                    },
+                    modifier = Modifier.align(Alignment.BottomCenter),
+                )
             }
         }
+
+        skipAction?.let { (label, target) ->
+            SkipPill(
+                label = label,
+                onClick = {
+                    seekTo(target)
+                    hud = PlayerHud.Seek(target, target - positionMs)
+                    hudKey++
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(
+                        end = 18.dp,
+                        bottom = if (controlsVisible) 126.dp else 26.dp,
+                    ),
+            )
+        }
+
+        hud?.let { PlayerHudOverlay(it, Modifier.align(Alignment.Center)) }
 
         if (ended) {
             EndedOverlay(
@@ -595,7 +845,7 @@ fun PlayerScreen(
                         app.play(anime, next, queue)
                     }
                 },
-                onBack = { back() },
+                onBack = { persistAndBack() },
             )
         }
 
@@ -648,7 +898,7 @@ fun PlayerScreen(
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Track selection is also available from the player's settings button.",
+                        "Tracks are loaded from the selected source.",
                         color = Muted,
                         style = MaterialTheme.typography.bodySmall,
                     )
@@ -661,7 +911,11 @@ fun PlayerScreen(
                         ) {
                             Box(
                                 Modifier.size(7.dp).clip(CircleShape).background(
-                                    if (subtitle.default || subtitle.lang.contains("english", true)) Mint else Ice,
+                                    if (subtitle.default || subtitle.lang.contains("english", true)) {
+                                        Mint
+                                    } else {
+                                        Ice
+                                    },
                                 ),
                             )
                             Text(
@@ -675,6 +929,311 @@ fun PlayerScreen(
             }
         }
     }
+}
+
+private sealed interface PlayerHud {
+    data class Seek(val targetMs: Long, val deltaMs: Long) : PlayerHud
+    data class Brightness(val value: Float) : PlayerHud
+    data class Volume(val value: Float) : PlayerHud
+    data class DoubleTap(val forward: Boolean, val targetMs: Long) : PlayerHud
+}
+
+@Composable
+private fun PlayerTopBar(
+    anime: Anime,
+    episode: Episode,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color(0xD9000000), Color.Transparent),
+                ),
+            )
+            .statusBarsPadding()
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = "Back",
+                tint = Color.White,
+            )
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                anime.title,
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                episode.displayTitle(),
+                color = Color.White.copy(alpha = 0.66f),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        SourcePill(providerId = anime.provider)
+    }
+}
+
+@Composable
+private fun PlayerCenterControls(
+    isPlaying: Boolean,
+    enabled: Boolean,
+    onPlayPause: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier
+            .size(66.dp)
+            .clip(CircleShape)
+            .clickable(enabled = enabled, onClick = onPlayPause),
+        color = Color.Black.copy(alpha = 0.55f),
+        shape = CircleShape,
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(
+                if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint = Color.White,
+                modifier = Modifier.size(34.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerBottomControls(
+    positionMs: Long,
+    durationMs: Long,
+    playback: Playback?,
+    hasNext: Boolean,
+    isLandscape: Boolean,
+    onScrub: (Float) -> Unit,
+    onScrubFinished: () -> Unit,
+    onReplay: () -> Unit,
+    onForward: () -> Unit,
+    onNext: (() -> Unit)?,
+    onAudio: () -> Unit,
+    onQuality: () -> Unit,
+    onSubtitles: () -> Unit,
+    onFullscreen: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.Transparent, Color(0xE6000000)),
+                ),
+            )
+            .navigationBarsPadding()
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        if (durationMs > 0L) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(
+                    formatTime(positionMs),
+                    color = Color.White.copy(alpha = 0.84f),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                Slider(
+                    value = (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f),
+                    onValueChange = { fraction ->
+                        onScrub((fraction * durationMs.toFloat()).coerceIn(0f, durationMs.toFloat()))
+                    },
+                    onValueChangeFinished = onScrubFinished,
+                    modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color.White,
+                        activeTrackColor = Mint,
+                        inactiveTrackColor = Color.White.copy(alpha = 0.25f),
+                    ),
+                )
+                Text(
+                    formatTime(durationMs),
+                    color = Color.White.copy(alpha = 0.84f),
+                    style = MaterialTheme.typography.labelSmall,
+                )
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            PlayerIconButton(Icons.Rounded.Replay10, "Back 10 seconds", onReplay)
+            PlayerIconButton(Icons.Rounded.Forward10, "Forward 10 seconds", onForward)
+            if (hasNext && onNext != null) {
+                PlayerIconButton(Icons.Rounded.SkipNext, "Next episode", onNext)
+            }
+            Spacer(Modifier.weight(1f))
+            if (playback != null) {
+                PlayerChip(
+                    text = audioChipLabel(
+                        playback.requestedAudio,
+                        playback.audio,
+                        playback.audioFallback,
+                    ),
+                    color = if (playback.audioFallback) Amber else Color.White,
+                    onClick = onAudio,
+                )
+                PlayerChip(
+                    text = playback.quality?.let { "${it}p" } ?: "AUTO",
+                    color = Color.White,
+                    onClick = onQuality,
+                )
+                if (playback.subtitles.isNotEmpty()) {
+                    PlayerIconButton(Icons.Rounded.ClosedCaption, "Subtitles", onSubtitles)
+                }
+            }
+            PlayerIconButton(
+                if (isLandscape) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
+                if (isLandscape) "Exit fullscreen" else "Fullscreen",
+                onFullscreen,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerIconButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    onClick: () -> Unit,
+) {
+    IconButton(onClick = onClick) {
+        Icon(
+            icon,
+            contentDescription = description,
+            tint = Color.White.copy(alpha = 0.92f),
+            modifier = Modifier.size(23.dp),
+        )
+    }
+}
+
+@Composable
+private fun PlayerChip(text: String, color: Color, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier.clip(RoundedCornerShape(50)).clickable(onClick = onClick),
+        color = Color.White.copy(alpha = 0.13f),
+        shape = RoundedCornerShape(50),
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            color = color,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun SkipPill(label: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier.clip(RoundedCornerShape(50)).clickable(onClick = onClick),
+        color = Color.Black.copy(alpha = 0.72f),
+        shape = RoundedCornerShape(50),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Icon(
+                Icons.Rounded.SkipNext,
+                contentDescription = null,
+                tint = Mint,
+                modifier = Modifier.size(18.dp),
+            )
+            Text(
+                label,
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PlayerHudOverlay(hud: PlayerHud, modifier: Modifier = Modifier) {
+    val icon = when (hud) {
+        is PlayerHud.Seek -> Icons.Rounded.Forward10
+        is PlayerHud.Brightness -> Icons.Rounded.Brightness6
+        is PlayerHud.Volume -> Icons.Rounded.VolumeUp
+        is PlayerHud.DoubleTap -> if (hud.forward) Icons.Rounded.Forward10 else Icons.Rounded.Replay10
+    }
+    val title = when (hud) {
+        is PlayerHud.Seek -> "${if (hud.deltaMs >= 0) "+" else "-"}${formatDelta(hud.deltaMs)}"
+        is PlayerHud.Brightness -> "Brightness ${(hud.value * 100).roundToInt()}%"
+        is PlayerHud.Volume -> "Volume ${(hud.value * 100).roundToInt()}%"
+        is PlayerHud.DoubleTap -> "${if (hud.forward) "+" else "-"}10 seconds"
+    }
+    val subtitle = when (hud) {
+        is PlayerHud.Seek -> formatTime(hud.targetMs)
+        is PlayerHud.DoubleTap -> formatTime(hud.targetMs)
+        else -> null
+    }
+    Surface(
+        modifier = modifier,
+        color = Color.Black.copy(alpha = 0.76f),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 15.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(27.dp))
+            Column {
+                Text(title, color = Color.White, style = MaterialTheme.typography.titleMedium)
+                if (subtitle != null) {
+                    Text(
+                        subtitle,
+                        color = Color.White.copy(alpha = 0.62f),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatTime(ms: Long): String {
+    val total = (ms.coerceAtLeast(0L) / 1000L)
+    val hours = total / 3600L
+    val minutes = (total % 3600L) / 60L
+    val seconds = total % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%02d:%02d".format(minutes, seconds)
+    }
+}
+
+private fun formatDelta(ms: Long): String {
+    val total = (abs(ms) / 1000L)
+    val minutes = total / 60L
+    val seconds = total % 60L
+    return if (minutes > 0L) "%d:%02d".format(minutes, seconds) else "${seconds}s"
 }
 
 @Composable

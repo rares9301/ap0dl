@@ -15,7 +15,9 @@ import com.ap0dl.anyomi.data.Loadable
 import com.ap0dl.anyomi.data.LocalDownload
 import com.ap0dl.anyomi.data.PlayRequest
 import com.ap0dl.anyomi.data.ProviderInfo
+import com.ap0dl.anyomi.data.ScheduleWeek
 import com.ap0dl.anyomi.data.SearchHit
+import com.ap0dl.anyomi.data.TrendingChart
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.Job
@@ -56,6 +58,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _downloadNotice = MutableStateFlow<String?>(null)
     val downloadNotice: StateFlow<String?> = _downloadNotice.asStateFlow()
+
+    private val _trending = MutableStateFlow<Loadable<TrendingChart>>(Loadable.Idle)
+    val trending: StateFlow<Loadable<TrendingChart>> = _trending.asStateFlow()
+
+    private val _schedule = MutableStateFlow<Loadable<ScheduleWeek>>(Loadable.Idle)
+    val schedule: StateFlow<Loadable<ScheduleWeek>> = _schedule.asStateFlow()
 
     private val detailsCache = mutableMapOf<String, Details>()
     private var downloadPoll: Job? = null
@@ -106,6 +114,37 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _selectedHit.value = hit
     }
 
+    fun refreshTrending(force: Boolean = false) {
+        val current = _trending.value
+        if (!force && (current is Loadable.Ready || current is Loadable.Loading)) return
+        viewModelScope.launch {
+            _trending.value = Loadable.Loading
+            _trending.value = try {
+                Loadable.Ready(Api.trending())
+            } catch (error: Exception) {
+                Loadable.Failed(error.message ?: "Could not load the AniTrendz chart")
+            }
+        }
+    }
+
+    fun refreshSchedule(start: Long, end: Long, force: Boolean = false) {
+        val current = _schedule.value
+        if (!force && (current is Loadable.Ready || current is Loadable.Loading)) return
+        viewModelScope.launch {
+            _schedule.value = Loadable.Loading
+            _schedule.value = try {
+                Loadable.Ready(Api.schedule(start, end))
+            } catch (error: Exception) {
+                Loadable.Failed(error.message ?: "Could not load this week's schedule")
+            }
+        }
+    }
+
+    /** Best-effort title lookup used by Trending/Schedule before opening Details. */
+    suspend fun findTitle(title: String): SearchHit? = runCatching {
+        Api.search(title, provider = null, limit = 8).firstOrNull()
+    }.getOrNull()
+
     suspend fun details(hit: SearchHit, force: Boolean = false): Details {
         val key = "${hit.provider}|${hit.url}"
         if (force) detailsCache.remove(key)
@@ -144,31 +183,49 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             it.anime.provider == anime.provider && it.anime.url == anime.url &&
                 it.episode.number == episode.number
         }
+        // Replaying a finished episode should not reopen it at the credits.
+        val restarting = existing?.completed == true
         val item = HistoryItem(
             anime = anime,
             episode = episode,
-            positionMs = existing?.positionMs ?: 0L,
+            positionMs = if (restarting) 0L else existing?.positionMs ?: 0L,
             durationMs = existing?.durationMs ?: 0L,
             updatedAt = now,
-            localPath = localPath,
+            localPath = localPath ?: existing?.localPath,
         )
         update(item)
     }
 
+    /**
+     * Persists a real playback position. Duration is sticky: ExoPlayer can
+     * briefly report 0 while resolving a new stream and that must not erase a
+     * known runtime or make an episode look complete.
+     */
     fun updateProgress(anime: Anime, episode: Episode, positionMs: Long, durationMs: Long) {
         val existing = _history.value.firstOrNull {
             it.anime.provider == anime.provider && it.anime.url == anime.url &&
                 it.episode.number == episode.number
         }
+        val safeDuration = when {
+            durationMs > 0L -> durationMs
+            existing != null && existing.durationMs > 0L -> existing.durationMs
+            else -> 0L
+        }
+        if (positionMs <= 0L && safeDuration <= 0L) return
+        val safePosition = if (safeDuration > 0L) {
+            positionMs.coerceIn(0L, safeDuration)
+        } else {
+            positionMs.coerceAtLeast(0L)
+        }
         val item = HistoryItem(
             anime = anime,
             episode = episode,
-            positionMs = positionMs,
-            durationMs = durationMs,
+            positionMs = safePosition,
+            durationMs = safeDuration,
             updatedAt = System.currentTimeMillis(),
             localPath = existing?.localPath,
         )
-        if (existing == null || positionMs > 0L) update(item)
+        update(item)
     }
 
     fun removeHistory(item: HistoryItem) {

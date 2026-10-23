@@ -59,7 +59,7 @@ private val Colors = darkColorScheme(
     scrim = Color(0xCC000000),
 )
 
-private val AnyomiTypography = Typography(
+private val Ap0dlTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Black,
@@ -155,7 +155,7 @@ private val AnyomiTypography = Typography(
     ),
 )
 
-private val AnyomiShapes = Shapes(
+private val Ap0dlShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
     small = RoundedCornerShape(12.dp),
     medium = RoundedCornerShape(16.dp),
@@ -179,11 +179,11 @@ val CardGradient = Brush.linearGradient(
 )
 
 @Composable
-fun AnyomiTheme(content: @Composable () -> Unit) {
+fun Ap0dlTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = Colors,
-        typography = AnyomiTypography,
-        shapes = AnyomiShapes,
+        typography = Ap0dlTypography,
+        shapes = Ap0dlShapes,
         content = content,
     )
 }

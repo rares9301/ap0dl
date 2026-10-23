@@ -96,13 +96,13 @@ fun BrowseScreen(
         ) {
             Column {
                 Text(
-                    "BROWSE",
+                    "SEARCH",
                     color = Mint,
                     style = MaterialTheme.typography.labelMedium,
                     letterSpacing = 2.sp,
                 )
                 Text(
-                    "Search once.",
+                    "Search",
                     color = Paper,
                     style = MaterialTheme.typography.headlineLarge,
                 )
@@ -285,19 +285,19 @@ private fun DiscoveryGrid(
                     )
                     Spacer(Modifier.height(14.dp))
                     Text(
-                        "One search.\nEvery source.",
+                        "Search every source.",
                         color = Paper,
                         style = MaterialTheme.typography.headlineMedium,
                     )
                     Spacer(Modifier.height(7.dp))
                     Text(
-                        "The engine queries all live adapters in parallel and ranks the best matches locally.",
+                        "Find a title, then pick the source you want to watch.",
                         color = Muted,
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.height(15.dp))
                     Text(
-                        "TRY A SEARCH",
+                        "POPULAR SEARCHES",
                         color = Ice.copy(alpha = 0.75f),
                         style = MaterialTheme.typography.labelSmall,
                         letterSpacing = 1.2.sp,

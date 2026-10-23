@@ -19,7 +19,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -97,9 +99,9 @@ fun PosterCard(
     subtitleOverride: String? = null,
 ) {
     Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick),
+        // Only the artwork is clipped. Clipping the whole column rounded off
+        // the first character of metadata such as "2026 · TV".
+        modifier = modifier.clickable(onClick = onClick),
     ) {
         Box(
             modifier = Modifier
@@ -268,9 +270,10 @@ fun HistoryCard(
         episodes = item.anime.totalEpisodes,
     )
     Column(
+        // Keep the text outside the rounded clip for the same reason as
+        // PosterCard: years and episode labels must not lose their first digit.
         modifier = modifier
             .width(160.dp)
-            .clip(RoundedCornerShape(18.dp))
             .clickable(onClick = onPlay),
     ) {
         Box(
@@ -313,17 +316,35 @@ fun HistoryCard(
                 color = Color.White.copy(alpha = 0.92f),
                 style = MaterialTheme.typography.labelMedium,
             )
-            if (item.durationMs > 0) {
-                LinearProgressIndicator(
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(9.dp)
+                    .size(46.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
                     progress = { item.progress },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(3.dp),
-                    color = Mint,
-                    trackColor = Color.White.copy(alpha = 0.2f),
-                    drawStopIndicator = {},
+                    modifier = Modifier.fillMaxSize(),
+                    color = if (item.completed) Mint else Ice,
+                    trackColor = Color.White.copy(alpha = 0.18f),
+                    strokeWidth = 3.dp,
                 )
+                if (item.completed) {
+                    Icon(
+                        Icons.Rounded.Check,
+                        contentDescription = "Completed",
+                        tint = Mint,
+                        modifier = Modifier.size(19.dp),
+                    )
+                } else {
+                    Text(
+                        if (item.durationMs > 0L) "${item.remainingMinutes}m" else "NEW",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
         Spacer(Modifier.height(8.dp))
@@ -334,17 +355,49 @@ fun HistoryCard(
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        Text(
-            item.episode.audio.audioLabel(),
-            color = Muted,
-            style = MaterialTheme.typography.bodySmall,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Text(
+                item.episode.audio.audioLabel(),
+                color = Muted,
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Text(
+                when {
+                    item.completed -> "Completed"
+                    item.durationMs > 0L -> "${item.remainingMinutes} min left"
+                    else -> "Just started"
+                },
+                color = if (item.completed) Mint else Ice.copy(alpha = 0.86f),
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
         Spacer(Modifier.height(2.dp))
         Text(
-            hit.providerName,
+            providerLabel(item.anime.provider),
             color = providerColor(item.anime.provider),
             style = MaterialTheme.typography.labelSmall,
         )
+    }
+}
+
+/**
+ * Short, user-facing source blurbs. Rust keeps the detailed adapter notes for
+ * the CLI; the app should describe what a viewer gets, not how it is scraped.
+ */
+private fun providerSummary(provider: ProviderInfo): String = when (provider.id.lowercase()) {
+    "reanime" -> "Sub and Dub streams with a large catalog."
+    "animegg" -> "Direct MP4 playback with multiple qualities."
+    "anidb" -> "HLS and 720p MP4 with complete episode lists."
+    "kisskh" -> "HLS streams with per-episode keys."
+    "animeparadise" -> "Opaque-token HLS with 1080p variants."
+    "animetoki" -> "MKV playback · experimental while quotas are fixed."
+    else -> provider.notes.ifBlank {
+        provider.baseUrl.substringAfter("://").substringBefore("/")
     }
 }
 
@@ -394,7 +447,7 @@ fun SourceCard(
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                provider.notes.ifBlank { provider.baseUrl.substringAfter("://").substringBefore("/") },
+                providerSummary(provider),
                 color = Muted.copy(alpha = 0.82f),
                 style = MaterialTheme.typography.bodySmall,
                 maxLines = 3,

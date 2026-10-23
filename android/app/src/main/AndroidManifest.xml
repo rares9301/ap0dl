@@ -13,7 +13,7 @@
         android:largeHeap="true"
         android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Anyomi.Starting"
+        android:theme="@style/Theme.AP0DL.Starting"
         android:usesCleartextTraffic="true">
 
         <activity
@@ -21,7 +21,7 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden"
             android:exported="true"
             android:launchMode="singleTop"
-            android:theme="@style/Theme.Anyomi.Starting"
+            android:theme="@style/Theme.AP0DL.Starting"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

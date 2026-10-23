@@ -13,10 +13,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CalendarMonth
 import androidx.compose.material.icons.rounded.Download
-import androidx.compose.material.icons.rounded.Explore
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.MoreHoriz
+import androidx.compose.material.icons.rounded.TrendingUp
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
@@ -44,7 +45,9 @@ import com.ap0dl.anyomi.ui.screens.DownloadsScreen
 import com.ap0dl.anyomi.ui.screens.HomeScreen
 import com.ap0dl.anyomi.ui.screens.MoreScreen
 import com.ap0dl.anyomi.ui.screens.PlayerScreen
-import com.ap0dl.anyomi.ui.theme.AnyomiTheme
+import com.ap0dl.anyomi.ui.screens.ScheduleScreen
+import com.ap0dl.anyomi.ui.screens.TrendingScreen
+import com.ap0dl.anyomi.ui.theme.Ap0dlTheme
 import com.ap0dl.anyomi.ui.theme.Ice
 import com.ap0dl.anyomi.ui.theme.Muted
 import com.ap0dl.anyomi.ui.theme.Night
@@ -58,8 +61,8 @@ class MainActivity : ComponentActivity() {
         )
         super.onCreate(savedInstanceState)
         setContent {
-            AnyomiTheme {
-                AnyomiApp()
+            Ap0dlTheme {
+                Ap0dlApp()
             }
         }
     }
@@ -73,18 +76,24 @@ private data class Destination(
 
 private val destinations = listOf(
     Destination("home", "Home", Icons.Rounded.Home),
-    Destination("browse?provider=all", "Browse", Icons.Rounded.Explore),
+    Destination("trending", "Trending", Icons.Rounded.TrendingUp),
+    Destination("schedule", "Schedule", Icons.Rounded.CalendarMonth),
     Destination("downloads", "Downloads", Icons.Rounded.Download),
     Destination("more", "More", Icons.Rounded.MoreHoriz),
 )
 
 @Composable
-private fun AnyomiApp() {
+private fun Ap0dlApp() {
     val nav = rememberNavController()
     val app: AppViewModel = viewModel()
     val backStack by nav.currentBackStackEntryAsState()
     val route = backStack?.destination?.route.orEmpty()
-    val showBottomBar = route == "home" || route.startsWith("browse") || route == "downloads" || route == "more"
+    val showBottomBar = route == "home" ||
+        route == "trending" ||
+        route == "schedule" ||
+        route.startsWith("browse") ||
+        route == "downloads" ||
+        route == "more"
     val playRequest by app.playRequest.collectAsStateWithLifecycle()
     val activeDownloads by app.activeDownloads.collectAsStateWithLifecycle()
     val context = LocalContext.current
@@ -168,6 +177,24 @@ private fun AnyomiApp() {
                     )
                 }
             }
+            composable("trending") {
+                TrendingScreen(
+                    app = app,
+                    onOpen = { hit ->
+                        app.select(hit)
+                        nav.navigate("details") { launchSingleTop = true }
+                    },
+                )
+            }
+            composable("schedule") {
+                ScheduleScreen(
+                    app = app,
+                    onOpen = { hit ->
+                        app.select(hit)
+                        nav.navigate("details") { launchSingleTop = true }
+                    },
+                )
+            }
             composable("downloads") {
                 DownloadsScreen(
                     app = app,
@@ -190,15 +217,16 @@ private fun AnyomiApp() {
                 tonalElevation = androidx.compose.ui.unit.Dp.Unspecified,
             ) {
                 destinations.forEach { destination ->
-                    val selected = when {
-                        destination.route.startsWith("home") -> route == "home"
-                        destination.route.startsWith("browse") -> route.startsWith("browse")
+                    val selected = when (destination.route) {
+                        "home" -> route == "home"
+                        "downloads" -> route == "downloads"
+                        "more" -> route == "more"
                         else -> route == destination.route
                     }
                     NavigationBarItem(
                         selected = selected,
                         onClick = {
-                            val target = if (destination.route == "browse?provider=all") "browse" else destination.route
+                            val target = destination.route
                             nav.navigate(target) {
                                 popUpTo(nav.graph.findStartDestination().id) {
                                     saveState = true

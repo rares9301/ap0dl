@@ -160,7 +160,12 @@ private fun DetailsContent(
         else details.episodes.sortedBy { it.number }
     }
     val resumeEpisode = history?.let { saved ->
-        details.episodes.firstOrNull { it.number == saved.episode.number }
+        if (saved.completed) {
+            details.episodes.firstOrNull { it.number > saved.episode.number }
+                ?: details.episodes.firstOrNull { it.number == saved.episode.number }
+        } else {
+            details.episodes.firstOrNull { it.number == saved.episode.number }
+        }
     } ?: details.episodes.firstOrNull()
 
     LazyColumn(
@@ -232,7 +237,12 @@ private fun DetailsContent(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 PrimaryAction(
-                    text = if (history != null && resumeEpisode != null) {
+                    text = if (
+                        history != null &&
+                        !history.completed &&
+                        resumeEpisode != null &&
+                        resumeEpisode.number == history.episode.number
+                    ) {
                         "Resume ${resumeEpisode.label.replace("Episode", "E")}"
                     } else if (resumeEpisode != null) {
                         "Play ${resumeEpisode.label.replace("Episode", "E")}"
@@ -276,7 +286,13 @@ private fun DetailsContent(
             Spacer(Modifier.height(8.dp))
             if (history != null) {
                 Text(
-                    "Last watched ${history.episode.label} · ${(history.progress * 100).toInt()}%",
+                    if (history.completed) {
+                        "Completed ${history.episode.label}"
+                    } else if (history.durationMs > 0L) {
+                        "${history.remainingMinutes} min left · ${history.episode.label}"
+                    } else {
+                        "Started ${history.episode.label}"
+                    },
                     modifier = Modifier.padding(horizontal = 20.dp),
                     color = Mint.copy(alpha = 0.85f),
                     style = MaterialTheme.typography.bodySmall,

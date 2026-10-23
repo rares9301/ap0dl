@@ -1,10 +1,13 @@
 package com.ap0dl.anyomi
 
 import com.ap0dl.anyomi.data.Anime
+import com.ap0dl.anyomi.data.Chapter
 import com.ap0dl.anyomi.data.Episode
 import com.ap0dl.anyomi.data.ProviderInfo
+import com.ap0dl.anyomi.data.ScheduleWeek
 import com.ap0dl.anyomi.data.SearchHit
 import com.ap0dl.anyomi.data.TaskId
+import com.ap0dl.anyomi.data.TrendingChart
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -40,6 +43,13 @@ object MobileEngine {
     ): String
     private external fun nativeDownloads(): String
     private external fun nativeDownloadRemove(taskId: String): String
+    private external fun nativeTrending(): String
+    private external fun nativeSchedule(start: Long, end: Long): String
+    private external fun nativeSkipTimes(
+        animeJson: String,
+        episodeJson: String,
+        durationMs: Long,
+    ): String
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -91,6 +101,18 @@ object MobileEngine {
     fun removeDownload(taskId: String) {
         decode<Boolean>(nativeDownloadRemove(taskId))
     }
+
+    fun trending(): TrendingChart = decode(nativeTrending())
+
+    fun schedule(start: Long, end: Long): ScheduleWeek = decode(nativeSchedule(start, end))
+
+    fun skipTimes(anime: Anime, episode: Episode, durationMs: Long): List<Chapter> = decode(
+        nativeSkipTimes(
+            json.encodeToString(anime),
+            json.encodeToString(episode),
+            durationMs,
+        ),
+    )
 
     private inline fun <reified T> decode(raw: String): T {
         if (raw.isBlank()) throw EngineException("The engine returned an empty response")

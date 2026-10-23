@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Build the Anyomi Android app, including both Rust JNI libraries.
+# Build the AP0DL Android app, including both Rust JNI libraries.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 export ANDROID_HOME="${ANDROID_HOME:-/opt/android-sdk}"
 export ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/27.2.12479018}"
+export PATH="$HOME/.cargo/bin:$PATH"
 
 command -v cargo-ndk >/dev/null || {
     echo "cargo-ndk is required: cargo install cargo-ndk" >&2

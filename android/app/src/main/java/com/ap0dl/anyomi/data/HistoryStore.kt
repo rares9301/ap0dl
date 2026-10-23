@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.math.ceil
 
 @Serializable
 data class HistoryItem(
@@ -20,6 +21,27 @@ data class HistoryItem(
         } else {
             0f
         }
+
+    /**
+     * An episode is only complete when we know its duration and playback has
+     * actually reached the credits. A position of one second never qualifies.
+     */
+    val completed: Boolean
+        get() = durationMs > 0L && positionMs >= (durationMs * 0.95).toLong()
+
+    val remainingMs: Long
+        get() = if (durationMs > 0L) (durationMs - positionMs).coerceAtLeast(0L) else 0L
+
+    /** Rounded-up minutes, so a 21m 04s remainder reads as 22 minutes. */
+    val remainingMinutes: Int
+        get() = if (durationMs > 0L) {
+            ceil(remainingMs / 60_000.0).toInt().coerceAtLeast(0)
+        } else {
+            0
+        }
+
+    val started: Boolean
+        get() = positionMs > 0L
 }
 
 class HistoryStore(context: Context) {
