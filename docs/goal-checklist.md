@@ -63,8 +63,8 @@ Status legend: `[ ]` not started · `[~]` started / in progress · `[x]` complet
 | 14 | Emulator verification: fresh boot, install release APK, live navigation/player/gesture/skip/progress tests, screenshots | [x] | [x] | Home, Trending, Schedule, Downloads, More, Browse, player HUDs, AniSkip and +85 fallback verified; screenshots in `docs/evidence/ap0dl-2026-10-23/` |
 | 15 | Custom AP0DL identity art: launcher icon + About artwork memeing UPB Politehnica Bucharest, DeepSeek, Arch Linux and Rust | [x] | [x] | Adaptive crest (Arch A, Rust gear, DeepSeek wave, UPB shield, play mark), splash reuse, More “AP0DL crest” card, launcher screenshot |
 | 16 | Netflix-beating polish pass: interaction details, empty/error states, provider labels, player ergonomics, no regressions | [x] | [x] | Fixed Re:Anime label, Browse/Downloads copy, duplicate Downloads headline, center-tap pause, horizontal seek units; player, trending, schedule and history flows re-tested |
-| 17 | Docs and release: README, version/APK, checklist final state, commit, push to `origin/main` | [~] | [ ] | README/evidence in progress; APK 1.1.0 built; commit/push pending |
-| 18 | Finish: mark goal complete, disarm watchdog, report outcome | [~] | [ ] | Waiting for final push + evidence + marker |
+| 17 | Docs and release: README, version/APK, checklist final state, commit, push to `origin/main` | [x] | [x] | Implementation commit `e13ea54` pushed to `origin/main`; APK `dist/AP0DL-1.1.0.apk` SHA-256 `fedfb362a270aa93a39f57ecda0994101f0bef7891bc312bb90702a41cadd70d` |
+| 18 | Finish: mark goal complete, disarm watchdog, report outcome | [x] | [x] | `/tmp/ap0dl-goal-complete` written after the push; watchdog disarms on marker; final report delivered |
 
 ## Recovery contract
 
