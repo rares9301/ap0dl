@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use ap0dl_core::Config;
 use ap0dl_core::error::{Error, Result};
 
+use crate::spread::{PageLayout, ReadingDirection};
+
 /// How downloaded chapters are stored.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -46,10 +48,19 @@ pub struct MangaConfig {
     /// anything else receives a temporary folder of downloaded pages.
     pub reader: String,
     pub reader_args: Vec<String>,
+    /// mpv viewer layout: `double` pairs portrait pages into spreads (needs
+    /// ffmpeg), `single` shows one page at a time.
+    pub page_layout: PageLayout,
+    /// `rtl` (manga) puts the first page of a spread on the right and makes
+    /// the Left arrow turn forward; `ltr` is the comic order.
+    pub reading_direction: ReadingDirection,
     /// Concurrent image downloads per chapter.
     pub concurrency: usize,
     /// Path of the library JSON. Empty means `<data dir>/ap0dl/manga-library.json`.
     pub library_path: Option<PathBuf>,
+    /// Path of the reading-state JSON (chapter and page per series). Empty
+    /// means `<config dir>/ap0dl/manga-state.json`.
+    pub state_path: Option<PathBuf>,
     pub sources: SourcesConfig,
 }
 
@@ -61,8 +72,11 @@ impl Default for MangaConfig {
             format: ChapterFormat::Cbz,
             reader: "mpv".to_string(),
             reader_args: Vec::new(),
+            page_layout: PageLayout::Double,
+            reading_direction: ReadingDirection::Rtl,
             concurrency: 4,
             library_path: None,
+            state_path: None,
             sources: SourcesConfig::default(),
         }
     }
@@ -182,6 +196,21 @@ impl MangaConfig {
         if let Ok(value) = std::env::var("AP0DL_MANGA_LIBRARY") {
             self.library_path = Some(PathBuf::from(value));
         }
+        if let Ok(value) = std::env::var("AP0DL_MANGA_STATE") {
+            self.state_path = Some(PathBuf::from(value));
+        }
+        if let Some(value) = std::env::var("AP0DL_MANGA_LAYOUT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+        {
+            self.page_layout = value;
+        }
+        if let Some(value) = std::env::var("AP0DL_MANGA_DIRECTION")
+            .ok()
+            .and_then(|value| value.parse().ok())
+        {
+            self.reading_direction = value;
+        }
         if let Ok(value) = std::env::var("AP0DL_MANGADEX_BASE") {
             self.sources.mangadex.base_url = value;
         }
@@ -234,6 +263,15 @@ impl MangaConfig {
         })
     }
 
+    pub fn state_file(&self) -> PathBuf {
+        self.state_path.clone().unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join("ap0dl")
+                .join("manga-state.json")
+        })
+    }
+
     pub fn sample() -> &'static str {
         r#"# Manga plugin settings. Lives in the same file as the anime settings.
 [manga]
@@ -242,8 +280,11 @@ default_source = "mangadex"   # breaks ties between equally good matches
 format = "cbz"                # cbz (with ComicInfo.xml) or folder
 reader = "mpv"                # mpv/mpv.exe get URLs; other viewers get a temp folder
 reader_args = []
+page_layout = "double"        # double (two-page spreads, needs ffmpeg) or single
+reading_direction = "rtl"     # rtl (manga: Left arrow turns forward) or ltr
 concurrency = 4               # parallel page downloads per chapter
 # library_path = "/home/you/.local/share/ap0dl/manga-library.json"
+# state_path = "/home/you/.config/ap0dl/manga-state.json"  # last chapter/page per series
 
 [manga.sources.mangadex]
 base_url = "https://mangadex.org"
@@ -276,6 +317,8 @@ base_url = "https://example.test"
 [manga]
 format = "folder"
 concurrency = 2
+page_layout = "single"
+reading_direction = "ltr"
 [manga.sources.mangadex]
 languages = ["en", "pt-br"]
 "#,
@@ -283,6 +326,8 @@ languages = ["en", "pt-br"]
         .unwrap();
         assert_eq!(config.format, ChapterFormat::Folder);
         assert_eq!(config.concurrency, 2);
+        assert_eq!(config.page_layout, PageLayout::Single);
+        assert_eq!(config.reading_direction, ReadingDirection::Ltr);
         assert_eq!(config.sources.mangadex.languages, ["en", "pt-br"]);
         assert_eq!(config.sources.mangapill.base_url, "https://mangapill.com");
     }
@@ -292,6 +337,8 @@ languages = ["en", "pt-br"]
         let config = MangaConfig::from_toml("quality = \"best\"\n").unwrap();
         assert_eq!(config.default_source, "mangadex");
         assert_eq!(config.format, ChapterFormat::Cbz);
+        assert_eq!(config.page_layout, PageLayout::Double);
+        assert_eq!(config.reading_direction, ReadingDirection::Rtl);
     }
 
     #[test]

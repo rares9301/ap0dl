@@ -14,6 +14,7 @@ bin=./target/debug/ap0dl
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 export AP0DL_MANGA_LIBRARY="$tmp/library.json"
+export AP0DL_MANGA_STATE="$tmp/state.json"
 
 verify_source() {
   local source="$1" query="$2" min_chapters="$3"
@@ -92,17 +93,33 @@ printf ' \r' | TERM=xterm-256color timeout 180 script -qec \
 grep -q 'DOWNLOAD ALL CHAPTERS' "$tmp/download-tui.txt"
 test "$(grep -c '^https://' "$tmp/download-tui.txt")" -ge 500
 
-echo "== Reader post-chapter menu TUI =="
+echo "== Chapter prompt, saved reading state and viewer menu TUI =="
 mkdir -p "$tmp/bin"
 printf '#!/bin/sh\nexit 0\n' >"$tmp/bin/mpv"
 chmod +x "$tmp/bin/mpv"
-printf '\r\r\033[B\033[B\033[B\033[B\033[B\033[B\r' | PATH="$tmp/bin:$PATH" \
-  TERM=xterm-256color timeout 180 script -qec \
-  "$bin manga read 'mangapill:bocchi the rock' --index 1 --reader mpv --log warn" /dev/null \
-  >"$tmp/read-tui.txt"
-grep -q 'Finished Chapter 0' "$tmp/read-tui.txt"
-grep -q 'Next: Chapter 1' "$tmp/read-tui.txt"
-grep -q 'Reading Bocchi the Rock! - Chapter 1' "$tmp/read-tui.txt"
+read_tui() {
+  printf "$1" | PATH="$tmp/bin:$PATH" TERM=xterm-256color timeout 180 script -qec \
+    "$bin manga read 'mangapill:bocchi the rock' --index 1 --reader mpv --log warn" /dev/null \
+    >"$tmp/read-tui.txt"
+}
+# Typed chapter, then Quit (the menu's default) after the viewer closes.
+read_tui '3\r\r'
+grep -q 'What chapter do you want to read' "$tmp/read-tui.txt"
+grep -q 'Reading Bocchi the Rock! from Chapter 3' "$tmp/read-tui.txt"
+grep -q 'Viewer closed' "$tmp/read-tui.txt"
+jq -e '.series | length == 1 and .[0].chapter_name == "Chapter 3"' "$AP0DL_MANGA_STATE" >/dev/null
+# Enter with nothing typed resumes the saved chapter.
+read_tui '\r\r'
+grep -q 'Saved: Chapter 3' "$tmp/read-tui.txt"
+grep -q 'Reading Bocchi the Rock! from Chapter 3' "$tmp/read-tui.txt"
+
+echo "== Continuous two-page mpv viewer (offline) =="
+if command -v mpv >/dev/null 2>&1 && command -v ffmpeg >/dev/null 2>&1; then
+  cargo test -q -p ap0dl-manga mpv_session -- --ignored >"$tmp/viewer-test.txt" 2>&1
+  grep -q 'test result: ok. 1 passed' "$tmp/viewer-test.txt"
+else
+  echo "SKIP: mpv and ffmpeg are needed for the viewer session test"
+fi
 
 echo "== Library tracking =="
 "$bin" manga library add 'mangadex:bocchi the rock' --index 1 --no-interactive
@@ -118,4 +135,4 @@ AP0DL_MANGAPILL_BASE='http://127.0.0.1:9' timeout 120 "$bin" manga read \
 grep -q '^https://' "$tmp/fallback.out"
 grep -q 'Using ' "$tmp/fallback.err"
 
-echo "PASS: three live manga sources, merged ranking, CBZ downloads, TUI checklist, reader menu, library, fallback"
+echo "PASS: three live manga sources, merged ranking, CBZ downloads, TUI checklist, chapter prompt + saved state, mpv viewer, library, fallback"

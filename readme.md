@@ -277,6 +277,10 @@ ap0dl manga read "mangadex:bocchi the rock"
 ap0dl manga download "mangadex:bocchi the rock" --range 1-3
 ```
 
+`read` asks which chapter to open; pressing Enter resumes the saved chapter
+and page. With mpv it opens a continuous two-page viewer that runs on into the
+next chapters (arrow keys turn pages; spreads need ffmpeg).
+
 Sources, commands, configuration and verification are documented in
 [`docs/manga.md`](docs/manga.md).
 

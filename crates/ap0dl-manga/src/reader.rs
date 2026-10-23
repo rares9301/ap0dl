@@ -54,7 +54,7 @@ pub fn read_path(reader: &str, title: &str, path: &Path, extra_args: &[String]) 
     run(reader, &args)
 }
 
-fn mpv_args(
+pub(crate) fn mpv_args(
     reader: &str,
     title: &str,
     headers: &BTreeMap<String, String>,

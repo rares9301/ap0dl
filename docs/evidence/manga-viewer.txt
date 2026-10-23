@@ -1,0 +1,7 @@
+2026-10-23  mpv v0.41.0, ffmpeg n9.0.2, WSL2 (Linux mpv)
+./scripts/verify-manga.sh  -> PASS (all three sources, chapter prompt + saved state, viewer session)
+cargo test -p ap0dl-manga mpv_session -- --ignored  -> ok (5/5 runs)
+Live MangaPill "Bocchi the Rock!" 1-3 driven over the IPC socket (--vo=null):
+  double page 11-page chapter -> frames 1-2..9-10, 11; Left (rtl) ran on Chapter 1 -> 2 -> 3
+  d -> single page at the same page; RIGHT at Chapter 3 page 1 prepended Chapter 2 at page 10/10
+  n/p chapter jumps; state file updated on every page turn; resume via Enter at saved chapter/page

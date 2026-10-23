@@ -90,4 +90,5 @@ Optional crate mounted in `ap0dl-cli` behind the `manga` feature (off by default
 - `source::MangaSource` is the Aniyomi-style trait; register sources only in `sources::all`, add a config struct in `config.rs` (`[manga.sources.<id>]`, env overrides in `apply_env`, sample entry), and add the source to `scripts/verify-manga.sh`.
 - `cli/` holds the whole `ap0dl manga` surface; the host only has the `Manga(MangaArgs)` variant and one dispatch arm in `main.rs`.
 - `Page::headers` must carry any CDN `Referer`; `Page::fallback_urls` lists mirrors tried after `image_url` fails.
+- `read` with Unix mpv runs `viewer.rs`: mpv driven over `--input-ipc-server` (keys are `script-message`s back to the controller; the playlist mirrors `Viewer::chapters`, and rearrangements suppress position events until a marker reply). `spread.rs` pairs pages and joins them with ffmpeg; `state.rs` saves chapter/page per series on each page turn. Offline check: `cargo test -p ap0dl-manga mpv_session -- --ignored` (needs mpv + ffmpeg).
 - Live check: `./scripts/verify-manga.sh <source>`.

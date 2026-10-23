@@ -18,6 +18,7 @@ use clap::{Args, Subcommand};
 
 use crate::config::{ChapterFormat, MangaConfig};
 use crate::engine::MangaEngine;
+use crate::spread::{PageLayout, ReadingDirection};
 
 #[derive(Debug, Args)]
 pub struct MangaArgs {
@@ -101,8 +102,9 @@ pub enum MangaCommand {
 
     /// Read chapters in mpv (or the configured image viewer).
     ///
-    /// With no --index/--range, opens fuzzy manga and chapter pickers and a
-    /// next/previous menu after each chapter.
+    /// With no --index/--range, opens the fuzzy manga picker and asks which
+    /// chapter to read; Enter resumes the saved chapter and page. mpv shows
+    /// a continuous two-page viewer that runs on into the next chapters.
     Read {
         /// Manga title. Omit to be prompted interactively.
         query: Option<String>,
@@ -120,6 +122,18 @@ pub enum MangaCommand {
         reader_args: Vec<String>,
         #[arg(long)]
         scanlator: Option<String>,
+        /// One page at a time in the mpv viewer.
+        #[arg(long, conflicts_with = "double")]
+        single: bool,
+        /// Two-page spreads in the mpv viewer (needs ffmpeg).
+        #[arg(long)]
+        double: bool,
+        /// Left-to-right reading (comics): Right arrow turns forward.
+        #[arg(long, conflicts_with = "rtl")]
+        ltr: bool,
+        /// Right-to-left reading (manga): Left arrow turns forward.
+        #[arg(long)]
+        rtl: bool,
         /// Print page image URLs instead of opening the reader.
         #[arg(long)]
         print_url: bool,
@@ -271,6 +285,10 @@ pub async fn run(config: Config, args: MangaArgs) -> Result<()> {
             reader,
             reader_args,
             scanlator,
+            single,
+            double,
+            ltr,
+            rtl,
             print_url,
             no_interactive,
         } => {
@@ -284,6 +302,16 @@ pub async fn run(config: Config, args: MangaArgs) -> Result<()> {
                     reader,
                     reader_args,
                     scanlator,
+                    layout: (single || double).then_some(if single {
+                        PageLayout::Single
+                    } else {
+                        PageLayout::Double
+                    }),
+                    direction: (ltr || rtl).then_some(if ltr {
+                        ReadingDirection::Ltr
+                    } else {
+                        ReadingDirection::Rtl
+                    }),
                     print_url,
                     no_interactive,
                 },
