@@ -31,5 +31,10 @@ tracing.workspace = true
 url.workspace = true
 urlencoding.workspace = true
 which.workspace = true
+
+# BoringSSL-based TLS impersonation is desktop-only; Android uses the
+# normal rustls client and reports challenges instead of trying to bypass
+# them. This keeps the mobile library free of a BoringSSL/CMake build.
+[target.'cfg(not(target_os = "android"))'.dependencies]
 wreq.workspace = true
 wreq-util.workspace = true

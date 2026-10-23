@@ -70,6 +70,19 @@ Status legend: `[ ]` not started · `[~]` in progress · `[x]` done.
 | 20 | Post-playback fuzzy action menu for `stream` | [x] | [x] | Replay, download instead, next, previous, change quality, pick another episode, quit |
 | 21 | TUI verification and final checklist sync | [x] | [x] | PTY runs exercised download-all and multi-select, plus replay/next/previous/quality/download actions; 61 tests pass |
 
+## Android follow-up (2026-10-23)
+
+| # | Work item | Started | Completed | Notes |
+|---|-----------|---------|-----------|-------|
+| 22 | Android app scaffold: Compose UI, JNI JSON bridge, bundled Rust providers | [x] | [x] | `android/` + `crates/ap0dl-mobile`; Kotlin is UI/player glue only; providers, quality and downloads stay in Rust |
+| 23 | Live Android playback and proxy lifetime | [x] | [x] | Re:Anime, AnimeGG, AniDB, KissKH and AnimeParadise played in-app; `FlixProxy`/`RangeProxy` stay alive for the session |
+| 24 | Sub/Dub audio preference end to end | [x] | [x] | Persisted default in More, per-episode `AUDIO` chip, Rust stream filtering, position-preserving re-resolve and amber fallback warning |
+| 25 | Dual-audio track selection and active-track display | [x] | [x] | ExoPlayer prefers `ja` for Sub and `en` for Dub; sheet shows the live track; Re:Anime verified Japanese → English → Japanese |
+| 26 | Downloads honor the audio preference and report progress | [x] | [x] | Mobile bridge passes audio into the core; Re:Anime E1 downloaded as HLS 1.0 GB with the card showing `Sub`, 260-segment progress and offline playback |
+| 27 | Release APK build, signing and install | [x] | [x] | 18 MB `app-release.apk`, debug certificate for sideloading; R8 build installed as `com.ap0dl.anyomi` and resolved live streams |
+| 28 | AnimeToki AT-Cloud quota diagnosis and safe failure | [x] | [x] | Quota page reproduced; `RangeProxy` probes 1 MiB, returns a plain-language quota reason before playback, and AnimeToki is marked experimental |
+| 29 | Android docs, evidence, checklist sync and final verification | [x] | [x] | README Android section, release evidence, goals mirror; fmt/clippy/build/63 tests pass |
+
 ## Live smoke evidence (2026-10-22)
 
 All commands used the built Rust binary from this workspace. Raw/short evidence
@@ -143,6 +156,11 @@ Provider-specific evidence:
 - 2026-10-22 — Added the download checkbox checklist with a download-all row,
   plus the post-playback fuzzy menu (replay/download/next/previous/quality).
   PTY-tested both flows; final suite now has 61 tests.
+- 2026-10-23 — Added the Anyomi Android app on the same Rust engine through a
+  JNI JSON bridge. Implemented persisted Sub/Dub selection, per-episode audio
+  switching with active-track display, dual-audio language preference, download
+  audio routing and clear provider-quota failures. Release APK built, signed and
+  live-tested on the emulator; suite now has 63 tests.
 
 ## Final verification
 
@@ -155,6 +173,7 @@ cargo build --workspace
 cargo test --workspace
 ./scripts/verify-improvements.sh
 ./scripts/verify-goal.sh
+./scripts/build-android.sh
 ```
 
 Results:
@@ -162,17 +181,51 @@ Results:
 - `cargo fmt --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
 - `cargo build --workspace`: pass.
-- `cargo test --workspace`: **61 passed, 0 failed**.
+- `cargo test --workspace`: **63 passed, 0 failed** (5 CLI + 58 core).
 - `verify-improvements.sh`: pass (AniDB 10 episodes, AnimeParadise + AnimeToki
   1080p, shared CLI surface, health ordering, fallback, Cloudflare probe).
 - `verify-goal.sh`: full local + six-provider live acceptance; output captured in
-  `docs/evidence/verify-goal-2026-10-22-rust-only.txt`.
+  `docs/evidence/verify-goal-2026-10-23-android.txt`.
+- Android release: `dist/Anyomi-1.0.0.apk` (18 MB, SHA-256
+  `afe9622e257a291a6e46995257e61c16809c3c9fd0641076fec7016cc2952405`), debug-cert
+  signed and installed as `com.ap0dl.anyomi`; the R8 build loaded the JNI
+  engine, resolved Re:Anime at 1080p, switched active audio
+  Japanese → English → Japanese, and completed a 1.0 GB HLS download whose card
+  showed `Episode 1 · Sub`.
 - PTY acceptance: download checklist (download-all and independent rows) and
   stream post-playback menu (replay, download, next, previous, quality); the
   checklist and next/quit menu paths are also automated in
   `verify-improvements.sh`.
-- All 21 checklist items are started/completed above; this file is mirrored to
+- All 29 checklist items are started/completed above; this file is mirrored to
   `/root/goals/ap0dl-rust-rewrite.md`.
+
+## Android release evidence (2026-10-23)
+
+Release-mode checks on the headless `anyomi` emulator:
+
+- **Build**: `cargo ndk` produced arm64-v8a and x86_64 `libap0dl_mobile.so`;
+  `./gradlew :app:assembleRelease` produced a minified 18 MB APK with the
+  debug certificate for direct sideloading.
+- **Default audio**: fresh install defaulted to Sub. Re:Anime Frieren E1 opened
+  at 1080p with the `AUDIO` chip reading SUB.
+- **Sub → Dub**: selecting Dub re-resolved the stream, kept the playback
+  position and changed the reported active ExoPlayer track from **Japanese** to
+  **English**.
+- **Dub → Sub**: switching back re-resolved again, preserved position and
+  reported **Japanese**.
+- **Fallback**: AnimeParadise (Sub only) with Dub selected showed an amber SUB
+  chip and the message “Dub audio is not offered by this source. Playback is
+  using Sub so the episode still works.” AnimeGG likewise reported an active
+  English track when only a Dub source was available.
+- **AnimeToki quota**: AT-Cloud returned `Download Limit Reached` /
+  “quota … exceeded due to high traffic” for the tested Frieren files. The new
+  1 MiB probe surfaces that reason before playback:
+  “cloud.animetoki.com has exhausted its download quota for this file; try
+  another episode or source, or wait for the quota to reset.” The provider is
+  marked experimental and no playback success is claimed for those files.
+- **R8/JNI**: the release build (not only debug) successfully loaded providers,
+  searched, resolved streams and played video, confirming ProGuard keeps the
+  native bridge and serializers intact.
 
 ## Notes
 

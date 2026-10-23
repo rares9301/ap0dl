@@ -2,6 +2,7 @@ pub mod hls;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -13,12 +14,46 @@ use crate::models::{Stream, StreamKind};
 use crate::proxy::FlixProxy;
 use crate::util;
 
+/// One progress tick from a direct or HLS download.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct DownloadProgress {
+    pub downloaded_bytes: u64,
+    pub total_bytes: Option<u64>,
+    pub segments_done: Option<u64>,
+    pub segments_total: Option<u64>,
+}
+
+/// Cheap, thread-safe progress hook used by the Android bridge. The desktop
+/// CLI keeps using its terminal progress bars.
+#[derive(Clone)]
+pub struct ProgressCallback(Arc<dyn Fn(DownloadProgress) + Send + Sync>);
+
+impl ProgressCallback {
+    pub fn new<F>(callback: F) -> Self
+    where
+        F: Fn(DownloadProgress) + Send + Sync + 'static,
+    {
+        Self(Arc::new(callback))
+    }
+
+    pub fn emit(&self, progress: DownloadProgress) {
+        (self.0)(progress);
+    }
+}
+
+impl std::fmt::Debug for ProgressCallback {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("ProgressCallback(..)")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct DownloadOptions {
     pub ffmpeg: String,
     pub merge_video: bool,
     pub merge_subtitles: bool,
     pub xor_mask: Vec<u8>,
+    pub progress: Option<ProgressCallback>,
 }
 
 impl Default for DownloadOptions {
@@ -28,6 +63,7 @@ impl Default for DownloadOptions {
             merge_video: true,
             merge_subtitles: true,
             xor_mask: Vec::new(),
+            progress: None,
         }
     }
 }
@@ -62,6 +98,7 @@ pub async fn download_stream(
             ffmpeg: options.ffmpeg.clone(),
             merge: options.merge_video,
             xor_mask: options.xor_mask.clone(),
+            progress: options.progress.clone(),
         };
         if hls_options.xor_mask.is_empty() {
             if let Some(info) = &stream.flix {
@@ -88,6 +125,7 @@ pub async fn download_stream(
         &mut headers,
         destination,
         stream.container.as_deref(),
+        options.progress.as_ref(),
     )
     .await?;
     let subtitles = if options.merge_subtitles {
@@ -109,6 +147,7 @@ async fn download_direct(
     headers: &mut HeaderMap,
     destination: &Path,
     container_hint: Option<&str>,
+    progress_callback: Option<&ProgressCallback>,
 ) -> Result<PathBuf> {
     if let Some(parent) = destination.parent() {
         tokio::fs::create_dir_all(parent).await?;
@@ -125,6 +164,13 @@ async fn download_direct(
         .unwrap_or("download");
     let progress = progress_bar(None, label);
     progress.set_position(written);
+    if let Some(callback) = progress_callback {
+        callback.emit(DownloadProgress {
+            downloaded_bytes: written,
+            total_bytes: None,
+            ..DownloadProgress::default()
+        });
+    }
     let mut last_error: Option<Error> = None;
 
     // Large direct files are frequently interrupted by CDN resets. Keep the
@@ -158,6 +204,13 @@ async fn download_direct(
         let total = response.content_length().map(|length| length + written);
         if let Some(total) = total {
             progress.set_length(total);
+            if let Some(callback) = progress_callback {
+                callback.emit(DownloadProgress {
+                    downloaded_bytes: written,
+                    total_bytes: Some(total),
+                    ..DownloadProgress::default()
+                });
+            }
         }
 
         let mut file = if append {
@@ -177,6 +230,13 @@ async fn download_direct(
                     tokio::io::AsyncWriteExt::write_all(&mut file, &chunk).await?;
                     written += chunk.len() as u64;
                     progress.set_position(written);
+                    if let Some(callback) = progress_callback {
+                        callback.emit(DownloadProgress {
+                            downloaded_bytes: written,
+                            total_bytes: total,
+                            ..DownloadProgress::default()
+                        });
+                    }
                 }
                 Err(source) => {
                     last_error = Some(Error::Http {

@@ -13,6 +13,7 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 ./target/debug/ap0dl providers --json >"$tmp"
 jq -e '([.[] | .id] | sort) == ["anidb", "animegg", "animeparadise", "animetoki", "kisskh", "reanime"]
-  and all(.[]; .status == "stable")' "$tmp" >/dev/null
+  and ([.[] | select(.status == "stable")] | length == 5)
+  and (.[] | select(.id == "animetoki") | .status == "experimental")' "$tmp" >/dev/null
 
-echo "PASS: CLI subcommands and six stable providers"
+echo "PASS: CLI subcommands, five stable providers and the experimental AnimeToki adapter"

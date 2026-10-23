@@ -316,11 +316,14 @@ impl Provider for AnimeToki {
     }
 
     fn status(&self) -> ProviderStatus {
-        ProviderStatus::Stable
+        // Search, details and episode indexing are live. Individual AT-Cloud
+        // files can still return a quota page under high traffic, so playback
+        // is not guaranteed for every episode.
+        ProviderStatus::Experimental
     }
 
     fn notes(&self) -> &'static str {
-        "WordPress catalogue + Cloudflare Worker file index; direct 1080p MKV files."
+        "WordPress catalogue + Cloudflare Worker file index; 1080p MKVs. AT-Cloud per-file quotas can block playback."
     }
 
     fn matches(&self, url: &Url) -> bool {

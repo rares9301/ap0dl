@@ -17,6 +17,7 @@ pub struct HlsOptions {
     pub ffmpeg: String,
     pub merge: bool,
     pub xor_mask: Vec<u8>,
+    pub progress: Option<crate::download::ProgressCallback>,
 }
 
 impl Default for HlsOptions {
@@ -25,6 +26,7 @@ impl Default for HlsOptions {
             ffmpeg: "ffmpeg".to_string(),
             merge: true,
             xor_mask: Vec::new(),
+            progress: None,
         }
     }
 }
@@ -157,6 +159,14 @@ pub async fn download_hls(
         downloaded_bytes += decoded.len() as u64;
         progress.set_message(format!("HLS {}", indicatif::HumanBytes(downloaded_bytes)));
         progress.set_position((index + 1) as u64);
+        if let Some(callback) = &options.progress {
+            callback.emit(crate::download::DownloadProgress {
+                downloaded_bytes,
+                total_bytes: None,
+                segments_done: Some((index + 1) as u64),
+                segments_total: Some(playlist.segments.len() as u64),
+            });
+        }
     }
     progress.finish_and_clear();
 

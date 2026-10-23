@@ -52,6 +52,9 @@ pub enum Error {
 
     #[error("player failed: {0}")]
     Player(String),
+
+    #[error("{0}")]
+    Unavailable(String),
 }
 
 impl Error {
@@ -76,6 +79,12 @@ impl Error {
 
     pub fn download(message: impl fmt::Display) -> Self {
         Self::Download(message.to_string())
+    }
+
+    /// The source is temporarily unavailable for a reason the user can act on
+    /// (for example a per-file download quota). The message is shown verbatim.
+    pub fn unavailable(message: impl fmt::Display) -> Self {
+        Self::Unavailable(message.to_string())
     }
 }
 

@@ -297,20 +297,73 @@ quality, audio, server, subtitle, header, HLS/direct kind, container hint and
 optional Flixcloud metadata. The picker and health/fallback logic are CLI
 modules shared by both playback and downloading.
 
+## Android app (Anyomi)
+
+[`android/`](android) is an original Jetpack Compose app inspired by Aniyomi's
+layout and colour language. It loads the same Rust engine through
+[`crates/ap0dl-mobile`](crates/ap0dl-mobile), a JNI facade that exchanges JSON
+for providers, search, details, episodes, streams and downloads. Kotlin is
+limited to UI, navigation, Media3 playback and local history/settings; provider,
+quality, proxy and download logic stay in Rust.
+
+Build prerequisites: JDK 17, Android SDK 35, NDK `27.2.12479018`, the Rust
+`aarch64-linux-android`/`x86_64-linux-android` targets and `cargo-ndk`. Then run:
+
+```sh
+./scripts/build-android.sh
+adb install -r android/app/build/outputs/apk/release/app-release.apk
+```
+
+The packaged release used for the 2026-10-23 verification is
+`dist/Anyomi-1.0.0.apk` (18 MB, SHA-256
+`afe9622e257a291a6e46995257e61c16809c3c9fd0641076fec7016cc2952405`).
+
+The release APK is minified and signed with the debug certificate so it can be
+sideloaded directly. The Gradle project is in `android/`; `local.properties`
+and build outputs are intentionally ignored.
+
+App behaviour:
+
+- Aniyomi-style Home, Browse, Details, Player, Downloads and More screens. The
+  player is forced landscape and uses Media3/ExoPlayer for HLS, DASH, MP4 and
+  MKV playback.
+- **Sub/Dub selection**: More → Audio sets the persisted default. The player's
+  `AUDIO` chip re-resolves the source and preserves the current position, so you
+  can switch mid-episode. Dubs are never removed. If a source only offers the
+  other version, the episode remains playable and the chip turns amber with an
+  explicit warning instead of silently pretending the stream matched.
+- The sheet shows the active ExoPlayer audio track. Re:Anime's separate Dub
+  streams report **English** and its Sub streams report **Japanese**.
+- For a single dual-audio file, ExoPlayer prefers `ja` for Sub and `en` for Dub;
+  the player's settings gear still exposes every embedded track. This is
+  best-effort when a file has no language metadata.
+- Downloads use the same persisted audio preference and stream through the same
+  Rust download engine with live byte/segment progress.
+- Re:Anime Flixcloud playback keeps a `FlixProxy` alive for the player session;
+  AnimeToki direct MKVs use `RangeProxy` to turn the CDN's bounded 206 reads into
+  a normal byte stream.
+- AnimeToki is marked **experimental** because AT-Cloud enforces per-file
+  download quotas. When a file is quota-blocked, the app now reports that reason
+  before starting playback instead of failing with a generic ExoPlayer network
+  error.
+
 ## Verification
 
 The ordered implementation checklist is in
 [`docs/goal-checklist.md`](docs/goal-checklist.md), mirrored to
-`/root/goals/ap0dl-rust-rewrite.md`. Live evidence for the current goal is in
-[`docs/evidence/live-smoke-2026-10-22.md`](docs/evidence/live-smoke-2026-10-22.md).
+`/root/goals/ap0dl-rust-rewrite.md`. Live evidence for the Rust engine is in
+[`docs/evidence/live-smoke-2026-10-22.md`](docs/evidence/live-smoke-2026-10-22.md);
+the Android audio/release run is documented in
+[`docs/evidence/android-2026-10-23.md`](docs/evidence/android-2026-10-23.md).
 
 ```sh
 cargo build --workspace
-cargo test --workspace           # 61 passed
+cargo test --workspace           # 63 passed
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ./scripts/verify-improvements.sh
 ./scripts/verify-goal.sh
+./scripts/build-android.sh
 ```
 
 `verify-improvements.sh` checks the live AniDB 10-episode list, AnimeParadise and

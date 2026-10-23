@@ -44,6 +44,7 @@ pub async fn run(
         merge_video: !no_merge,
         merge_subtitles: !no_merge,
         xor_mask: Vec::new(),
+        progress: None,
     };
     let mut downloaded = 0usize;
 

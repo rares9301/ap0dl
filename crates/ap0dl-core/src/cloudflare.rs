@@ -1,31 +1,121 @@
-use std::sync::OnceLock;
-use std::time::Duration;
-
-use bytes::Bytes;
-use reqwest::header::HeaderMap;
-use wreq_util::Emulation;
-
-use crate::error::{Error, Result};
-
 /// A native TLS/HTTP2 impersonation client used only when the normal reqwest
 /// client receives a Cloudflare challenge response. This is deliberately not
 /// a browser: it does not execute JavaScript or solve CAPTCHAs. It is enough
 /// for sites that gate on JA3/JA4 or HTTP/2 fingerprint rather than Turnstile.
-static CLIENT: OnceLock<Option<wreq::Client>> = OnceLock::new();
+///
+/// The impersonation dependency (BoringSSL) only builds on desktop targets.
+/// Android reports the challenge instead, allowing provider fallback to take
+/// over instead of making the whole app unbuildable.
+#[cfg(not(target_os = "android"))]
+mod platform {
+    use std::sync::OnceLock;
+    use std::time::Duration;
 
-fn client() -> Result<&'static wreq::Client> {
-    CLIENT
-        .get_or_init(|| {
-            wreq::Client::builder()
-                .emulation(Emulation::Chrome137)
-                .timeout(Duration::from_secs(30))
-                .redirect(wreq::redirect::Policy::limited(5))
-                .build()
-                .ok()
+    use bytes::Bytes;
+    use reqwest::header::HeaderMap;
+    use wreq_util::Emulation;
+
+    use crate::error::{Error, Result};
+
+    static CLIENT: OnceLock<Option<wreq::Client>> = OnceLock::new();
+
+    fn client() -> Result<&'static wreq::Client> {
+        CLIENT
+            .get_or_init(|| {
+                wreq::Client::builder()
+                    .emulation(Emulation::Chrome137)
+                    .timeout(Duration::from_secs(30))
+                    .redirect(wreq::redirect::Policy::limited(5))
+                    .build()
+                    .ok()
+            })
+            .as_ref()
+            .ok_or_else(|| {
+                Error::provider("cloudflare", "could not build TLS-impersonation client")
+            })
+    }
+
+    pub async fn get_text(url: &str, headers: &HeaderMap) -> Result<String> {
+        let mut request = client()?.get(url);
+        for (name, value) in headers {
+            if let Ok(value) = value.to_str() {
+                request = request.header(name.as_str(), value);
+            }
+        }
+        let response = request.send().await.map_err(|error| {
+            Error::provider(
+                "cloudflare",
+                format!("TLS fallback request failed: {error}"),
+            )
+        })?;
+        let status = response.status().as_u16();
+        let body = response.text().await.map_err(|error| {
+            Error::provider("cloudflare", format!("TLS fallback body failed: {error}"))
+        })?;
+        if super::is_challenge_body(&body) {
+            return Err(Error::provider(
+                "cloudflare",
+                "TLS impersonation reached a JavaScript/Turnstile challenge (not bypassable without a browser)",
+            ));
+        }
+        if !(200..300).contains(&status) {
+            return Err(Error::HttpStatus {
+                status,
+                url: format!("{url} (TLS impersonation)"),
+            });
+        }
+        Ok(body)
+    }
+
+    pub async fn get_bytes(url: &str, headers: &HeaderMap) -> Result<Bytes> {
+        let mut request = client()?.get(url);
+        for (name, value) in headers {
+            if let Ok(value) = value.to_str() {
+                request = request.header(name.as_str(), value);
+            }
+        }
+        let response = request.send().await.map_err(|error| {
+            Error::provider(
+                "cloudflare",
+                format!("TLS fallback request failed: {error}"),
+            )
+        })?;
+        let status = response.status().as_u16();
+        if !(200..300).contains(&status) {
+            return Err(Error::HttpStatus {
+                status,
+                url: format!("{url} (TLS impersonation)"),
+            });
+        }
+        response.bytes().await.map_err(|error| {
+            Error::provider("cloudflare", format!("TLS fallback body failed: {error}"))
         })
-        .as_ref()
-        .ok_or_else(|| Error::provider("cloudflare", "could not build TLS-impersonation client"))
+    }
 }
+
+#[cfg(target_os = "android")]
+mod platform {
+    use bytes::Bytes;
+    use reqwest::header::HeaderMap;
+
+    use crate::error::{Error, Result};
+
+    pub async fn get_text(_url: &str, _headers: &HeaderMap) -> Result<String> {
+        Err(Error::provider(
+            "cloudflare",
+            "TLS impersonation fallback is unavailable on Android; trying another provider",
+        ))
+    }
+
+    pub async fn get_bytes(_url: &str, _headers: &HeaderMap) -> Result<Bytes> {
+        Err(Error::provider(
+            "cloudflare",
+            "TLS impersonation fallback is unavailable on Android; trying another provider",
+        ))
+    }
+}
+
+pub use platform::{get_bytes, get_text};
 
 /// True for the common Cloudflare blocked/challenge statuses. A 403 from a
 /// normal origin (authentication, geo-block) is intentionally not retried.
@@ -44,63 +134,6 @@ pub fn is_challenge_body(body: &str) -> bool {
         || lower.contains("cf-mitigated")
         || lower.contains("cf-chl-")
         || (lower.contains("<title>attention required!") && lower.contains("cloudflare"))
-}
-
-pub async fn get_text(url: &str, headers: &HeaderMap) -> Result<String> {
-    let mut request = client()?.get(url);
-    for (name, value) in headers {
-        if let Ok(value) = value.to_str() {
-            request = request.header(name.as_str(), value);
-        }
-    }
-    let response = request.send().await.map_err(|error| {
-        Error::provider(
-            "cloudflare",
-            format!("TLS fallback request failed: {error}"),
-        )
-    })?;
-    let status = response.status().as_u16();
-    let body = response.text().await.map_err(|error| {
-        Error::provider("cloudflare", format!("TLS fallback body failed: {error}"))
-    })?;
-    if is_challenge_body(&body) {
-        return Err(Error::provider(
-            "cloudflare",
-            "TLS impersonation reached a JavaScript/Turnstile challenge (not bypassable without a browser)",
-        ));
-    }
-    if !(200..300).contains(&status) {
-        return Err(Error::HttpStatus {
-            status,
-            url: format!("{url} (TLS impersonation)"),
-        });
-    }
-    Ok(body)
-}
-
-pub async fn get_bytes(url: &str, headers: &HeaderMap) -> Result<Bytes> {
-    let mut request = client()?.get(url);
-    for (name, value) in headers {
-        if let Ok(value) = value.to_str() {
-            request = request.header(name.as_str(), value);
-        }
-    }
-    let response = request.send().await.map_err(|error| {
-        Error::provider(
-            "cloudflare",
-            format!("TLS fallback request failed: {error}"),
-        )
-    })?;
-    let status = response.status().as_u16();
-    if !(200..300).contains(&status) {
-        return Err(Error::HttpStatus {
-            status,
-            url: format!("{url} (TLS impersonation)"),
-        });
-    }
-    response.bytes().await.map_err(|error| {
-        Error::provider("cloudflare", format!("TLS fallback body failed: {error}"))
-    })
 }
 
 #[cfg(test)]

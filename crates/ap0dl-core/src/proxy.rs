@@ -1,11 +1,13 @@
-use std::net::SocketAddr;
-
 use axum::Router;
+use axum::body::Body;
 use axum::extract::{Query, State};
-use axum::http::{StatusCode, header};
+use axum::http::{HeaderMap, HeaderName, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
+use bytes::Bytes;
+use futures::stream::unfold;
 use reqwest::Client;
+use std::net::SocketAddr;
 use url::Url;
 
 use crate::error::{Error, Result};
@@ -386,5 +388,321 @@ mod tests {
             decode_proxy_url(&value).as_deref(),
             Some("https://fetch9.flixcloud.cc/a/video.m3u8")
         );
+    }
+
+    #[test]
+    fn recognizes_at_cloud_quota_pages() {
+        let page = b"<title>Download Limit Reached | AnimeToki</title>\
+            <p>The AT-Cloud Drive quota for this file has been exceeded due to high traffic.</p>";
+        let reason = quota_reason(page, "https://cloud.animetoki.com/?a=download")
+            .expect("quota page should be recognized");
+        assert!(reason.contains("cloud.animetoki.com"));
+        assert!(reason.contains("quota"));
+        assert!(quota_reason(b"<title>Not Found</title>", "https://example.com").is_none());
+    }
+
+    #[test]
+    fn parses_open_ended_byte_ranges() {
+        assert_eq!(parse_range("bytes=0-", 100), Some((0, 99)));
+        assert_eq!(parse_range("bytes=90-", 100), Some((90, 99)));
+        assert_eq!(parse_range("bytes=-10", 100), Some((90, 99)));
+        assert_eq!(parse_range("bytes=0-1048575", 500), Some((0, 499)));
+        assert_eq!(parse_range("bytes=100-", 100), None);
+    }
+}
+
+/// A local byte-range proxy for CDNs that reject media players' open-ended
+/// range requests. AnimeToki is the current example: it serves 16 MiB bounded
+/// ranges but returns 403/404 for `Range: bytes=0-` or huge ranges.
+///
+/// ExoPlayer and ffmpeg both naturally ask for `bytes=0-`; this proxy turns
+/// that request into a sequence of bounded upstream reads while presenting a
+/// normal 206 response to the player.
+pub struct RangeProxy {
+    addr: SocketAddr,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+const RANGE_CHUNK: u64 = 8 * 1024 * 1024;
+const PROBE_BYTES: u64 = 1024 * 1024;
+
+impl RangeProxy {
+    pub async fn start(
+        url: String,
+        headers: std::collections::BTreeMap<String, String>,
+    ) -> Result<Self> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(Error::Io)?;
+        let addr = listener.local_addr().map_err(Error::Io)?;
+        let client = Client::builder()
+            .user_agent(USER_AGENT)
+            .timeout(std::time::Duration::from_secs(120))
+            .redirect(reqwest::redirect::Policy::limited(10))
+            .build()
+            .map_err(|error| Error::config(format!("range proxy client: {error}")))?;
+
+        let mut request_headers = HeaderMap::new();
+        for (name, value) in headers {
+            let name = HeaderName::from_bytes(name.as_bytes())
+                .map_err(|error| Error::config(format!("range proxy header: {error}")))?;
+            let value = HeaderValue::from_str(&value)
+                .map_err(|error| Error::config(format!("range proxy header value: {error}")))?;
+            request_headers.insert(name, value);
+        }
+
+        let probe = probe_upstream(&client, &url, &request_headers).await?;
+        let state = RangeState {
+            client,
+            url,
+            headers: request_headers,
+            total: probe.total,
+            content_type: probe.content_type,
+            prefix: probe.prefix,
+        };
+        let app = Router::new()
+            .route("/range", axum::routing::get(handle_range))
+            .with_state(state);
+        let handle = tokio::spawn(async move {
+            if let Err(error) = axum::serve(listener, app).await {
+                tracing::warn!(%error, "range proxy stopped");
+            }
+        });
+
+        Ok(Self { addr, handle })
+    }
+
+    pub fn url(&self) -> String {
+        format!("http://{}/range", self.addr)
+    }
+}
+
+impl Drop for RangeProxy {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
+#[derive(Clone)]
+struct RangeState {
+    client: Client,
+    url: String,
+    headers: HeaderMap,
+    total: u64,
+    content_type: String,
+    /// The first PROBE_BYTES fetched during start-up. Serving these bytes from
+    /// memory avoids asking the CDN for the same range twice.
+    prefix: Bytes,
+}
+
+struct Probe {
+    total: u64,
+    content_type: String,
+    prefix: Bytes,
+}
+
+async fn probe_upstream(client: &Client, url: &str, headers: &HeaderMap) -> Result<Probe> {
+    let response = client
+        .get(url)
+        .headers(headers.clone())
+        .header(
+            header::RANGE,
+            format!("bytes=0-{}", PROBE_BYTES.saturating_sub(1)),
+        )
+        .header(header::ACCEPT_ENCODING, "identity")
+        .send()
+        .await
+        .map_err(|error| Error::provider("range-proxy", error))?;
+    let status = response.status();
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("application/octet-stream")
+        .to_string();
+    if status != StatusCode::PARTIAL_CONTENT {
+        // Keep the error readable: AT-Cloud returns a 403/404 HTML page when a
+        // file's download quota is empty, and a bare status code hides that.
+        let preview = preview_body(response).await;
+        if let Some(detail) = quota_reason(&preview, url) {
+            return Err(Error::unavailable(detail));
+        }
+        return Err(Error::provider(
+            "range-proxy",
+            format!("upstream range probe returned {status}"),
+        ));
+    }
+    let total = response
+        .headers()
+        .get(header::CONTENT_RANGE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.rsplit_once('/'))
+        .and_then(|(_, total)| total.trim().parse::<u64>().ok())
+        .ok_or_else(|| {
+            Error::provider(
+                "range-proxy",
+                format!("upstream range probe returned {status} without a total length"),
+            )
+        })?;
+    let prefix = response
+        .bytes()
+        .await
+        .map_err(|error| Error::provider("range-proxy", format!("reading probe body: {error}")))?;
+    if prefix.is_empty() {
+        return Err(Error::provider(
+            "range-proxy",
+            "upstream range probe returned an empty body",
+        ));
+    }
+    Ok(Probe {
+        total,
+        content_type,
+        prefix,
+    })
+}
+
+async fn preview_body(mut response: reqwest::Response) -> Bytes {
+    let mut preview = Vec::new();
+    while preview.len() < 16 * 1024 {
+        match response.chunk().await {
+            Ok(Some(chunk)) => preview.extend_from_slice(&chunk),
+            Ok(None) | Err(_) => break,
+        }
+    }
+    Bytes::from(preview)
+}
+
+fn quota_reason(body: &[u8], url: &str) -> Option<String> {
+    let text = String::from_utf8_lossy(body).to_ascii_lowercase();
+    let quota = text.contains("download limit")
+        || text.contains("quota")
+        || text.contains("exceeded due to high traffic");
+    if !quota {
+        return None;
+    }
+    let host = Url::parse(url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_string))
+        .unwrap_or_else(|| "the source".to_string());
+    Some(format!(
+        "{host} has exhausted its download quota for this file; try another episode or source, or wait for the quota to reset"
+    ))
+}
+
+async fn handle_range(State(state): State<RangeState>, headers: HeaderMap) -> Response {
+    let (start, end, partial) = match headers
+        .get(header::RANGE)
+        .and_then(|value| value.to_str().ok())
+    {
+        Some(value) => match parse_range(value, state.total) {
+            Some(range) => (range.0, range.1, true),
+            None => {
+                return Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(header::CONTENT_RANGE, format!("bytes */{}", state.total))
+                    .body(Body::empty())
+                    .unwrap_or_else(|_| StatusCode::RANGE_NOT_SATISFIABLE.into_response());
+            }
+        },
+        None => (0, state.total.saturating_sub(1), false),
+    };
+    if start > end || start >= state.total {
+        return Response::builder()
+            .status(StatusCode::RANGE_NOT_SATISFIABLE)
+            .header(header::CONTENT_RANGE, format!("bytes */{}", state.total))
+            .body(Body::empty())
+            .unwrap_or_else(|_| StatusCode::RANGE_NOT_SATISFIABLE.into_response());
+    }
+
+    let prefix_len = if start == 0 {
+        (state.prefix.len() as u64).min(end - start + 1) as usize
+    } else {
+        0
+    };
+    let prefix = if prefix_len > 0 {
+        state.prefix.slice(0..prefix_len)
+    } else {
+        Bytes::new()
+    };
+    let after_prefix = start.saturating_add(prefix_len as u64);
+    let stream_state = state.clone();
+    let stream = unfold((after_prefix, end, prefix), move |(next, end, pending)| {
+        let state = stream_state.clone();
+        async move {
+            if !pending.is_empty() {
+                return Some((Ok(pending), (next, end, Bytes::new())));
+            }
+            if next > end {
+                return None;
+            }
+            let chunk_end = next.saturating_add(RANGE_CHUNK - 1).min(end);
+            let result = fetch_chunk(&state, next, chunk_end).await;
+            Some((result, (chunk_end.saturating_add(1), end, Bytes::new())))
+        }
+    });
+
+    let length = end - start + 1;
+    let mut builder = Response::builder()
+        .status(if partial {
+            StatusCode::PARTIAL_CONTENT
+        } else {
+            StatusCode::OK
+        })
+        .header(header::CONTENT_TYPE, state.content_type)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_LENGTH, length);
+    if partial {
+        builder = builder.header(
+            header::CONTENT_RANGE,
+            format!("bytes {start}-{end}/{}", state.total),
+        );
+    }
+    builder
+        .body(Body::from_stream(stream))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
+}
+
+async fn fetch_chunk(state: &RangeState, start: u64, end: u64) -> std::io::Result<Bytes> {
+    let response = state
+        .client
+        .get(&state.url)
+        .headers(state.headers.clone())
+        .header(header::RANGE, format!("bytes={start}-{end}"))
+        .header(header::ACCEPT_ENCODING, "identity")
+        .send()
+        .await
+        .map_err(std::io::Error::other)?;
+    let status = response.status();
+    if !status.is_success() {
+        let preview = preview_body(response).await;
+        let message = quota_reason(&preview, &state.url)
+            .unwrap_or_else(|| format!("upstream range {start}-{end} returned {status}"));
+        tracing::warn!(%message, "range proxy upstream failed");
+        return Err(std::io::Error::other(message));
+    }
+    response.bytes().await.map_err(std::io::Error::other)
+}
+
+fn parse_range(value: &str, total: u64) -> Option<(u64, u64)> {
+    let value = value.strip_prefix("bytes=")?;
+    let (start, end) = value.split_once('-')?;
+    if start.is_empty() {
+        let suffix = end.parse::<u64>().ok()?;
+        if suffix == 0 || total == 0 {
+            return None;
+        }
+        let start = total.saturating_sub(suffix);
+        return Some((start, total - 1));
+    }
+    let start = start.parse::<u64>().ok()?;
+    let end = if end.is_empty() {
+        total.saturating_sub(1)
+    } else {
+        end.parse::<u64>().ok()?.min(total.saturating_sub(1))
+    };
+    if start > end || start >= total {
+        None
+    } else {
+        Some((start, end))
     }
 }

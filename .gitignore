@@ -16,3 +16,6 @@ ap0dl.toml
 
 # Logs
 *.log
+
+# Android release artifact
+/dist/

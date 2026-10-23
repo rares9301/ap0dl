@@ -413,6 +413,7 @@ async fn download_current(
         merge_video: true,
         merge_subtitles: config.merge_subtitles,
         xor_mask: Vec::new(),
+        progress: None,
     };
     eprintln!(
         "Downloading {} {} -> {}",
